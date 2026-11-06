@@ -1,0 +1,79 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Institute Desk</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{--ac:#c8553d;--ink:#1f2a24;--bg:#f5efe3;--card:#fffdf8;--ok:#2f6f4f;--no:#b3261e}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'DM Sans',system-ui,sans-serif}
+h1,h2,.brand{font-family:Fraunces,Georgia,serif;font-weight:600;margin:0}
+.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-bottom:2px solid var(--ink);background:var(--card)}
+.brand{font-size:22px;flex:1}.wrap{max-width:980px;margin:auto;padding:14px}
+.card{background:var(--card);border:1.5px solid var(--ink);border-radius:20px;padding:16px;margin:14px 0;box-shadow:4px 4px 0 var(--ink)}
+.btn{border:1.5px solid var(--ink);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 22px;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 0 0 4px #1f2a2412}
+.btn.p{background:var(--ac);color:#fff;border-color:var(--ac);box-shadow:0 0 0 4px color-mix(in srgb,var(--ac) 22%,transparent)}
+.btn.sm{padding:4px 14px;font-size:13px}.btn.d{color:var(--no);border-color:var(--no)}.btn:active{transform:translateY(1px)}
+.pill{display:inline-block;border:1.5px solid var(--ink);border-radius:999px;padding:6px 18px;margin:3px;cursor:pointer;font-weight:500;background:transparent}
+.pill.on{background:var(--ink);color:var(--bg)}
+input,select,textarea{font:inherit;border:1.5px solid var(--ink);border-radius:12px;padding:8px 12px;background:#fff;color:var(--ink);max-width:100%}
+textarea{width:100%;min-height:120px}label{display:block;font-weight:700;margin:10px 0 3px;font-size:13px}
+table{width:100%;border-collapse:collapse}td,th{padding:7px 8px;border-bottom:1px solid #1f2a2420;text-align:left}
+tr.abs td{background:#b3261e14}.tag{border-radius:999px;padding:2px 12px;font-size:12px;font-weight:700;border:1.5px solid}
+.ok{color:var(--ok)}.no{color:var(--no)}.mut{opacity:.65}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.veil{position:fixed;inset:0;background:#1f2a2499;display:grid;place-items:center;z-index:9}.veil .card{max-width:420px;width:92%}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 14px}#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:10px 24px;z-index:10;display:none}
+</style></head><body><div id="app"></div><div id="toast"></div>
+<script>
+const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let T=sessionStorage.t||'',S={insts:[],inst:null,tab:'att',secs:[],sec:null,day:new Date().toLocaleDateString('en-CA'),month:new Date().toLocaleDateString('en-CA').slice(0,7)};
+async function api(p,m='GET',b){const r=await fetch('/api/'+p,{method:m,headers:{'Content-Type':'application/json',Authorization:'Bearer '+T},body:b?JSON.stringify(b):undefined});const j=await r.json();if(r.status==401){sessionStorage.t=T='';login();throw 0}if(!r.ok)throw Error(j.error);return j}
+function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
+function ask(html,get){return new Promise(res=>{const v=document.createElement('div');v.className='veil';v.innerHTML=`<div class="card">${html}<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" id="no">Cancel</button><button class="btn p" id="yes">Confirm</button></div></div>`;document.body.append(v);
+$('#no').onclick=()=>{v.remove();res(false)};$('#yes').onclick=()=>{const r=get?get():true;v.remove();res(r)}})}
+const run=async f=>{try{await f()}catch(e){if(e)toast(e.message)}};
+function login(){$('#app').innerHTML=`<div class="wrap" style="max-width:420px;margin-top:12vh"><div class="card"><h1>Institute Desk</h1><p class="mut">Owner login</p><input id="pw" type="password" placeholder="Password" style="width:100%"><div style="margin-top:14px"><button class="btn p" id="go">Enter</button></div></div></div>`;
+$('#go').onclick=()=>run(async()=>{T=(await api('login','POST',{password:$('#pw').value})).token;sessionStorage.t=T;boot()});$('#pw').onkeydown=e=>e.key=='Enter'&&$('#go').click()}
+async function boot(){S.insts=await api('inst');if(!S.inst||!S.insts.find(i=>i.id==S.inst))S.inst=S.insts[0]?.id||null;await frame()}
+const cur=()=>S.insts.find(i=>i.id==S.inst);
+async function frame(){const i=cur();if(i)document.documentElement.style.setProperty('--ac',i.cfg.color);
+const L=i?.type=='schl'?['Class','Classes']:['Batch','Batches'];S.L=L;
+$('#app').innerHTML=`<div class="bar"><div class="brand">Institute Desk</div><select id="is">${S.insts.map(x=>`<option value="${x.id}" ${x.id==S.inst?'selected':''}>${esc(x.name)} (${x.type})</option>`).join('')}</select><button class="btn sm p" id="ni">+ New institute</button><button class="btn sm" id="lo">Logout</button></div>
+<div class="wrap">${i?`<div>${[['att','Attendance'],['fee','Fees'],['ann','Events & Notices'],['stu',L[1]+' & Students'],['log','Messages'],['set','Settings']].map(([k,n])=>`<span class="pill ${S.tab==k?'on':''}" data-t="${k}">${n}</span>`).join('')}</div><div id="main"></div>`:'<div class="card"><h2>Welcome</h2><p>Pehle "+ New institute" se apna cc ya schl banao.</p></div>'}</div>`;
+$('#is').onchange=e=>{S.inst=+e.target.value;S.sec=null;frame()};$('#lo').onclick=()=>{sessionStorage.t=T='';login()};
+$('#ni').onclick=()=>run(async()=>{const r=await ask(`<h2>New institute</h2><label>Name</label><input id="n" style="width:100%"><label>Type</label><select id="t"><option value="cc">Coaching centre (batches)</option><option value="schl">School / college (classes)</option></select>`,()=>({name:$('#n').value,type:$('#t').value}));if(r){const x=await api('inst','POST',r);S.inst=x.id;boot()}});
+document.querySelectorAll('[data-t]').forEach(e=>e.onclick=()=>{S.tab=e.dataset.t;frame()});if(i)run(views[S.tab])}
+async function secBar(after){S.secs=await api('sec?inst='+S.inst);if(!S.secs.find(s=>s.id==S.sec))S.sec=S.secs[0]?.id||null;
+return `<div class="card">${S.secs.map(s=>`<span class="pill ${s.id==S.sec?'on':''}" data-s="${s.id}">${esc(s.name)} · ${s.n}</span>`).join('')||`<span class="mut">Koi ${S.L[0].toLowerCase()} nahi hai, "${S.L[1]} & Students" tab mein banao.</span>`}</div>`}
+function bindSec(f){document.querySelectorAll('[data-s]').forEach(e=>e.onclick=()=>{S.sec=+e.dataset.s;run(f)})}
+const views={
+async att(){const h=await secBar(),m=$('#main');m.innerHTML=h+`<div class="card" id="box"></div>`;bindSec(views.att);if(!S.sec)return;
+const rows=await api(`att?sec=${S.sec}&day=${S.day}`);const ab=new Set(rows.filter(r=>r.status=='A').map(r=>r.id));
+const draw=()=>{$('#box').innerHTML=`<div class="row"><b>Date</b><input type="date" id="d" value="${S.day}"><span class="tag ok">Present ${rows.length-ab.size}</span><span class="tag no">Absent ${ab.size}</span><button class="btn sm" id="ap">All present</button><button class="btn p" id="sv">Save & alert parents</button></div>
+<table><tr><th>Roll</th><th>Name</th><th></th></tr>${rows.map(r=>`<tr class="${ab.has(r.id)?'abs':''}"><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td><button class="btn sm ${ab.has(r.id)?'d':''}" data-id="${r.id}">${ab.has(r.id)?'Absent':'Present'}</button></td></tr>`).join('')}</table>`;
+$('#d').onchange=e=>{S.day=e.target.value;run(views.att)};$('#ap').onclick=()=>{ab.clear();draw()};
+document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{const id=+b.dataset.id;ab.has(id)?ab.delete(id):ab.add(id);draw()});
+$('#sv').onclick=()=>run(async()=>{if(await ask(`<h2>Save attendance?</h2><p>${ab.size} absent bachhon ke parents ko WhatsApp par absent message jayega (date: ${S.day}).</p>`)){const r=await api('att','POST',{sec:S.sec,day:S.day,absent:[...ab]});toast(`Saved. ${r.alerts} alert queued`)}})};draw()},
+async fee(){const h=await secBar();$('#main').innerHTML=h+`<div class="card" id="box"></div>`;bindSec(views.fee);if(!S.sec)return;const rows=await api(`fee?sec=${S.sec}&month=${S.month}`);
+$('#box').innerHTML=`<div class="row"><b>Month</b><input type="month" id="m" value="${S.month}"><span class="tag ok">Cleared ${rows.filter(r=>r.status=='cleared').length}</span><span class="tag no">Pending ${rows.filter(r=>r.status!='cleared').length}</span><button class="btn sm" id="rm">Send reminders to all pending</button></div>
+<table><tr><th>Roll</th><th>Name</th><th>Status</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td class="${r.status=='cleared'?'ok':'no'}">${r.status=='cleared'?'Cleared '+r.cleared:'Pending'}</td><td>${r.status=='cleared'?'':`<button class="btn sm p" data-c="${r.id}">Approve</button>`}</td></tr>`).join('')}</table>`;
+$('#m').onchange=e=>{S.month=e.target.value;run(views.fee)};
+$('#rm').onclick=()=>run(async()=>{if(await ask(`<h2>Send reminders?</h2><p>Is institute ke saare pending parents ko ${S.month} ki fees ka reminder jayega.</p>`)){toast((await api('fee/remind','POST',{inst:S.inst,month:S.month})).sent+' reminders queued')}});
+document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>run(async()=>{if(await ask('<h2>Approve fees?</h2><p>Fees cleared mark hongi aur parent ko "fees received" message jayega.</p>')){await api('fee/clear','POST',{stu:+b.dataset.c,month:S.month});toast('Approved');views.fee()}}))},
+async ann(){const secs=await api('sec?inst='+S.inst);$('#main').innerHTML=`<div class="card"><h2>Event / festival / notice</h2><label>Kise bhejna hai</label><select id="to"><option value="">Poore institute ke sab students</option>${secs.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select><label>Message</label><textarea id="tx" placeholder="Yahan message likho"></textarea><label>PDF ya image (optional)</label><input type="file" id="fl" accept="application/pdf,image/*"><div style="margin-top:14px"><button class="btn p" id="sd">Send to parents</button></div></div>`;
+$('#sd').onclick=()=>run(async()=>{const tx=$('#tx').value.trim();if(!tx)throw Error('Message likho');const f=$('#fl').files[0];
+if(await ask(`<h2>Send to everyone?</h2><p>Ye message ${f?'file ke saath ':''}turant sab parents ko WhatsApp par jayega.</p>`)){let file=null;if(f)file={name:f.name,data:await new Promise(r=>{const x=new FileReader;x.onload=()=>r(x.result.split(',')[1]);x.readAsDataURL(f)})};
+const r=await api('announce','POST',{inst:S.inst,sec:$('#to').value||null,text:tx,file});toast(r.queued+' parents ko queue hua');$('#tx').value=''}})},
+async stu(){const h=await secBar();$('#main').innerHTML=h+`<div class="card"><div class="row"><input id="sn" placeholder="New ${S.L[0].toLowerCase()} name"><button class="btn p" id="sa">Add ${S.L[0]}</button>${S.sec?'<button class="btn d sm" id="sx">Delete this</button>':''}</div></div><div id="box"></div>`;bindSec(views.stu);
+$('#sa').onclick=()=>run(async()=>{const n=$('#sn').value.trim();if(n&&await ask(`<p>${S.L[0]} "${esc(n)}" banayein?</p>`)){S.sec=(await api('sec','POST',{inst:S.inst,name:n})).id;views.stu()}});
+if($('#sx'))$('#sx').onclick=()=>run(async()=>{if(await ask('<h2>Delete?</h2><p>Is section ke saare students bhi delete honge.</p>')){await api('sec/'+S.sec,'DELETE');S.sec=null;views.stu()}});if(!S.sec)return;
+const rows=await api('stu?sec='+S.sec);$('#box').innerHTML=`<div class="card"><h2>Students (${rows.length})</h2><label>Bulk add: har line mein  Naam, Parent WhatsApp number, Roll no</label><textarea id="bk" placeholder="Rahul Sharma, 9876543210, 1&#10;Anita Verma, 9811122233, 2"></textarea><div style="margin-top:10px"><button class="btn p" id="ba">Add students</button></div></div>
+<div class="card"><table><tr><th>Roll</th><th>Name</th><th>Parent number</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td><button class="btn sm d" data-x="${r.id}">Remove</button></td></tr>`).join('')}</table></div>`;
+$('#ba').onclick=()=>run(async()=>{if(await ask('<p>In students ko add karein?</p>')){toast((await api('stu/bulk','POST',{sec:S.sec,text:$('#bk').value})).added+' added');views.stu()}});
+document.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>run(async()=>{if(await ask('<p>Student hataayein?</p>')){await api('stu/'+b.dataset.x,'DELETE');views.stu()}}))},
+async log(){const r=await api('log?inst='+S.inst);$('#main').innerHTML=`<div class="card"><div class="row"><h2 style="flex:1">Message log</h2><button class="btn sm" id="e1">Export students CSV</button><button class="btn sm" id="e2">Export attendance CSV</button></div><p class="mut">dry-run = abhi WhatsApp token nahi laga, message sirf record hua.</p><table><tr><th>Time</th><th>To</th><th>Type</th><th>Status</th></tr>${r.map(x=>`<tr><td>${new Date(x.ts).toLocaleString('en-IN')}</td><td>${x.phone}</td><td>${x.kind}</td><td class="${x.status=='failed'?'no':x.status=='sent'?'ok':'mut'}">${x.status} ${esc(x.info)}</td></tr>`).join('')}</table></div>`;
+for(const [id,k] of [['e1','students'],['e2','attendance']])$('#'+id).onclick=()=>run(async()=>{const c=(await api(`export?inst=${S.inst}&kind=${k}`)).csv;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([c]));a.download=k+'.csv';a.click()})},
+async set(){const i=cur(),c=i.cfg;$('#main').innerHTML=`<div class="card"><h2>Settings</h2><div class="grid"><div><label>Institute name</label><input id="nm" value="${esc(i.name)}"></div><div><label>Type</label><select id="ty"><option value="cc" ${i.type=='cc'?'selected':''}>Coaching centre</option><option value="schl" ${i.type=='schl'?'selected':''}>School / college</option></select></div><div><label>Theme colour</label><input type="color" id="co" value="${c.color}"></div><div><label>Fee reminder: har mahine is tareekh ke baad</label><input type="number" id="fd" min="1" max="28" value="${c.feeDay}"></div></div>
+<h2 style="margin-top:20px">WhatsApp (sirf is institute ka apna number)</h2><div class="grid"><div><label>Phone Number ID</label><input id="wi" value="${esc(i.wa_id)}"></div><div><label>Access token ${i.has_token?'(saved, blank = same)':''}</label><input id="wt" type="password"></div><div><label>Template language</label><input id="lg" value="${c.lang}"></div></div>
+<h2 style="margin-top:20px">Template names (Meta mein approved)</h2><div class="grid">${Object.entries(c.tpl).map(([k,v])=>`<div><label>${k}</label><input data-tp="${k}" value="${esc(v)}"></div>`).join('')}</div>
+<div class="row" style="margin-top:18px"><button class="btn p" id="sv">Save settings</button><button class="btn d" id="dl">Delete institute</button></div></div>`;
+$('#sv').onclick=()=>run(async()=>{if(await ask('<p>Settings save karein?</p>')){const tpl={};document.querySelectorAll('[data-tp]').forEach(e=>tpl[e.dataset.tp]=e.value.trim());await api('inst/'+i.id,'PUT',{name:$('#nm').value,type:$('#ty').value,wa_id:$('#wi').value.trim(),wa_token:$('#wt').value.trim(),cfg:{color:$('#co').value,feeDay:+$('#fd').value,lang:$('#lg').value.trim(),tpl}});toast('Saved');boot()}});
+$('#dl').onclick=()=>run(async()=>{if(await ask('<h2>Institute delete?</h2><p>Saare sections, students aur logs hamesha ke liye hat jayenge.</p>')){await api('inst/'+i.id,'DELETE');S.inst=null;boot()}})}};
+T?boot().catch(()=>{}):login();
+</script></body></html>
