@@ -16,7 +16,7 @@ create table if not exists fee(stu integer,month text,status text,cleared text,p
 create table if not exists log(id integer primary key,ts text,inst integer,phone text,kind text,status text,info text);
 create table if not exists sent(key text primary key);`);
 const Q = (s, ...a) => db.prepare(s).all(...a), G = (s, ...a) => db.prepare(s).get(...a), R = (s, ...a) => db.prepare(s).run(...a);
-const DEF = { color: '#c8553d', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
+const DEF = { color: '#0f8b8d', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
 const cfgOf = i => { const c = JSON.parse(i.cfg || '{}'); return { ...DEF, ...c, tpl: { ...DEF.tpl, ...(c.tpl || {}) } }; };
 const norm = p => { const d = String(p).replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -94,6 +94,10 @@ const routes = [
     const phones = [...new Set(Q(b.sec ? 'select phone from stu where sec=?' : 'select phone from stu where inst=?', b.sec || i.id).map(r => r.phone))];
     (async () => { for (const p of phones) await wa(i, p, 'announce', tpl, [b.text], header); })();
     return { queued: phones.length }; }],
+  ['GET', /^\/api\/stats$/, (_, __, q) => { const d = today(), m = d.slice(0, 7), c = (sql, ...a) => G(sql, ...a).c;
+    const n = c('select count(*) c from stu where inst=?', q.inst), ab = s => c('select count(*) c from att a join stu s on s.id=a.stu where s.inst=? and a.day=? and a.status=?', q.inst, d, s);
+    const paid = c(`select count(*) c from fee f join stu s on s.id=f.stu where s.inst=? and f.month=? and f.status='cleared'`, q.inst, m);
+    return { students: n, present: ab('P'), absent: ab('A'), paid, pending: n - paid, msgs: c('select count(*) c from log where inst=? and ts>=?', q.inst, d), sections: c('select count(*) c from sec where inst=?', q.inst) }; }],
   ['GET', /^\/api\/log$/, (_, __, q) => Q('select * from log where inst=? order by id desc limit 200', q.inst)],
   ['GET', /^\/api\/export$/, (_, __, q) => { // CSV in the same columns your n8n chatbot Google Sheet uses
     const rows = q.kind === 'attendance' ? Q('select a.day Date,a.stu Student_ID,a.status Status from att a join stu s on s.id=a.stu where s.inst=?', q.inst)

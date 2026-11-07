@@ -1,41 +1,56 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Institute Desk</title>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@700&family=Plus+Jakarta+Sans:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-:root{--ac:#c8553d;--ink:#1f2a24;--bg:#f5efe3;--card:#fffdf8;--ok:#2f6f4f;--no:#b3261e}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 'DM Sans',system-ui,sans-serif}
-h1,h2,.brand{font-family:Fraunces,Georgia,serif;font-weight:600;margin:0}
-.bar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 18px;border-bottom:2px solid var(--ink);background:var(--card)}
-.brand{font-size:22px;flex:1}.wrap{max-width:980px;margin:auto;padding:14px}
-.card{background:var(--card);border:1.5px solid var(--ink);border-radius:20px;padding:16px;margin:14px 0;box-shadow:4px 4px 0 var(--ink)}
-.btn{border:1.5px solid var(--ink);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 22px;font:inherit;font-weight:700;cursor:pointer;box-shadow:0 0 0 4px #1f2a2412}
-.btn.p{background:var(--ac);color:#fff;border-color:var(--ac);box-shadow:0 0 0 4px color-mix(in srgb,var(--ac) 22%,transparent)}
-.btn.sm{padding:4px 14px;font-size:13px}.btn.d{color:var(--no);border-color:var(--no)}.btn:active{transform:translateY(1px)}
-.pill{display:inline-block;border:1.5px solid var(--ink);border-radius:999px;padding:6px 18px;margin:3px;cursor:pointer;font-weight:500;background:transparent}
-.pill.on{background:var(--ink);color:var(--bg)}
-input,select,textarea{font:inherit;border:1.5px solid var(--ink);border-radius:12px;padding:8px 12px;background:#fff;color:var(--ink);max-width:100%}
+:root{--ac:#0f8b8d;--ink:#10231f;--bg:#eef4f1;--card:#fff;--ok:#16a34a;--no:#e11d48;--sun:#ffc83d}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;color:var(--ink);font:15px/1.5 'Plus Jakarta Sans',system-ui,sans-serif;padding-bottom:96px;background:radial-gradient(500px 300px at 95% 0,#ffc83d55,transparent),radial-gradient(500px 400px at -10% 40%,color-mix(in srgb,var(--ac) 22%,transparent),transparent),var(--bg);background-attachment:fixed}
+h1,h2,.brand{font-family:'Bricolage Grotesque',sans-serif;font-weight:700;margin:0;letter-spacing:-.02em}
+.top{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:10px 14px;position:sticky;top:0;z-index:5;background:#ffffffd9;backdrop-filter:blur(10px)}
+.brand{flex:1;font-size:19px;white-space:nowrap}.wrap{max-width:980px;margin:auto;padding:12px 14px}
+.hero{border-radius:28px;padding:22px;color:#fff;background:linear-gradient(135deg,var(--ac),color-mix(in srgb,var(--ac) 50%,#0b1f33));position:relative;overflow:hidden;animation:up .5s both}
+.hero:after{content:'';position:absolute;right:-40px;top:-40px;width:170px;height:170px;border-radius:50%;background:var(--sun)}
+.hero:before{content:'';position:absolute;right:70px;bottom:-60px;width:120px;height:120px;border-radius:50%;border:14px solid #ffffff40}
+.hero h1{font-size:28px;position:relative;z-index:1}.hero p{margin:4px 0 0;opacity:.88;position:relative;z-index:1}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:14px 0}@media(min-width:700px){.stats{grid-template-columns:repeat(4,1fr)}}
+.stat{border-radius:22px;padding:14px 16px;color:#fff;animation:up .5s both}.stat b{display:block;font:700 32px 'Bricolage Grotesque'}.stat span{font-size:13px;opacity:.92}
+.card{background:var(--card);border-radius:24px;padding:16px;margin:14px 0;box-shadow:0 10px 30px -14px #10231f55;animation:up .4s both}
+.btn{border:0;background:#e6efeb;color:var(--ink);border-radius:999px;padding:10px 22px;font:inherit;font-weight:700;cursor:pointer;transition:.15s;box-shadow:inset 0 0 0 2px #10231f1f}
+.btn:hover{transform:translateY(-1px)}.btn:active{transform:scale(.97)}
+.btn.p{background:var(--ac);color:#fff;box-shadow:0 8px 18px -6px var(--ac),0 0 0 4px color-mix(in srgb,var(--ac) 20%,transparent)}
+.btn.sm{padding:5px 14px;font-size:13px}.btn.d{background:#ffe4ea;color:var(--no);box-shadow:none}
+.tg{border:0;border-radius:999px;padding:6px 16px;font:700 13px 'Plus Jakarta Sans';cursor:pointer;min-width:92px;color:#fff}.tg.p{background:var(--ok)}.tg.a{background:var(--no)}
+.pill{display:inline-block;border-radius:999px;padding:7px 16px;margin:3px;cursor:pointer;font-weight:600;background:#e6efeb;transition:.15s}.pill.on{background:var(--ink);color:#fff}
+.nav{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);width:min(520px,94vw);display:flex;background:var(--ink);border-radius:999px;padding:6px;z-index:6;box-shadow:0 14px 30px -8px #000a}
+.nav span{flex:1;text-align:center;color:#ffffffa6;padding:5px 0;border-radius:999px;cursor:pointer;font-size:10.5px;font-weight:700;line-height:1.2}.nav span i{display:block;font-style:normal;font-size:19px}.nav span.on{background:var(--sun);color:var(--ink)}
+.av{display:inline-grid;place-items:center;width:32px;height:32px;border-radius:50%;color:#fff;font-weight:700;margin-right:10px;vertical-align:middle}
+input,select,textarea{font:inherit;border:2px solid #10231f1f;border-radius:14px;padding:9px 13px;background:#fff;color:var(--ink);max-width:100%}input:focus,select:focus,textarea:focus{outline:0;border-color:var(--ac)}
 textarea{width:100%;min-height:120px}label{display:block;font-weight:700;margin:10px 0 3px;font-size:13px}
-table{width:100%;border-collapse:collapse}td,th{padding:7px 8px;border-bottom:1px solid #1f2a2420;text-align:left}
-tr.abs td{background:#b3261e14}.tag{border-radius:999px;padding:2px 12px;font-size:12px;font-weight:700;border:1.5px solid}
+table{width:100%;border-collapse:collapse}td,th{padding:8px 6px;border-bottom:1px solid #10231f14;text-align:left}th{font-size:12px;opacity:.6;text-transform:uppercase}
+tr.abs td{background:#ffe4ea77}.tag{border-radius:999px;padding:3px 12px;font-size:12px;font-weight:700;background:#e6efeb}.tag.ok{background:#dcfce7;color:#15803d}.tag.no{background:#ffe4ea;color:var(--no)}
 .ok{color:var(--ok)}.no{color:var(--no)}.mut{opacity:.65}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.veil{position:fixed;inset:0;background:#1f2a2499;display:grid;place-items:center;z-index:9}.veil .card{max-width:420px;width:92%}
-.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 14px}#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:10px 24px;z-index:10;display:none}
+.bar2{height:12px;border-radius:99px;background:#e6efeb;margin-top:8px;overflow:hidden}.bar2 i{display:block;height:100%;background:linear-gradient(90deg,var(--ac),var(--sun));border-radius:99px}
+.veil{position:fixed;inset:0;background:#10231f99;backdrop-filter:blur(4px);display:grid;place-items:center;z-index:9}.veil .card{max-width:420px;width:92%}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:0 14px}
+#toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;border-radius:999px;padding:10px 24px;z-index:10;display:none}
+@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 </style></head><body><div id="app"></div><div id="toast"></div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let T=sessionStorage.t||'',S={insts:[],inst:null,tab:'att',secs:[],sec:null,day:new Date().toLocaleDateString('en-CA'),month:new Date().toLocaleDateString('en-CA').slice(0,7)};
+const av=n=>`<span class="av" style="background:hsl(${[...n].reduce((a,c)=>a+c.charCodeAt(0),0)*37%360} 55% 42%)">${esc(n[0]||'?')}</span>`;
+let T=sessionStorage.t||'',S={insts:[],inst:null,tab:'dash',secs:[],sec:null,day:new Date().toLocaleDateString('en-CA'),month:new Date().toLocaleDateString('en-CA').slice(0,7)};
 async function api(p,m='GET',b){const r=await fetch('/api/'+p,{method:m,headers:{'Content-Type':'application/json',Authorization:'Bearer '+T},body:b?JSON.stringify(b):undefined});const j=await r.json();if(r.status==401){sessionStorage.t=T='';login();throw 0}if(!r.ok)throw Error(j.error);return j}
 function toast(t){const e=$('#toast');e.textContent=t;e.style.display='block';setTimeout(()=>e.style.display='none',2800)}
 function ask(html,get){return new Promise(res=>{const v=document.createElement('div');v.className='veil';v.innerHTML=`<div class="card">${html}<div class="row" style="justify-content:flex-end;margin-top:16px"><button class="btn" id="no">Cancel</button><button class="btn p" id="yes">Confirm</button></div></div>`;document.body.append(v);
 $('#no').onclick=()=>{v.remove();res(false)};$('#yes').onclick=()=>{const r=get?get():true;v.remove();res(r)}})}
 const run=async f=>{try{await f()}catch(e){if(e)toast(e.message)}};
-function login(){$('#app').innerHTML=`<div class="wrap" style="max-width:420px;margin-top:12vh"><div class="card"><h1>Institute Desk</h1><p class="mut">Owner login</p><input id="pw" type="password" placeholder="Password" style="width:100%"><div style="margin-top:14px"><button class="btn p" id="go">Enter</button></div></div></div>`;
+function login(){$('#app').innerHTML=`<div class="wrap" style="max-width:420px;margin-top:8vh"><div class="hero" style="padding-bottom:56px"><h1>🎓 Institute Desk</h1><p>Attendance, fees aur notices, ek hi jagah.</p></div><div class="card" style="position:relative;z-index:2;margin-top:-30px"><h2>Owner login</h2><br><input id="pw" type="password" placeholder="Password" style="width:100%"><div style="margin-top:14px"><button class="btn p" id="go">Enter</button></div></div></div>`;
 $('#go').onclick=()=>run(async()=>{T=(await api('login','POST',{password:$('#pw').value})).token;sessionStorage.t=T;boot()});$('#pw').onkeydown=e=>e.key=='Enter'&&$('#go').click()}
 async function boot(){S.insts=await api('inst');if(!S.inst||!S.insts.find(i=>i.id==S.inst))S.inst=S.insts[0]?.id||null;await frame()}
 const cur=()=>S.insts.find(i=>i.id==S.inst);
 async function frame(){const i=cur();if(i)document.documentElement.style.setProperty('--ac',i.cfg.color);
 const L=i?.type=='schl'?['Class','Classes']:['Batch','Batches'];S.L=L;
-$('#app').innerHTML=`<div class="bar"><div class="brand">Institute Desk</div><select id="is">${S.insts.map(x=>`<option value="${x.id}" ${x.id==S.inst?'selected':''}>${esc(x.name)} (${x.type})</option>`).join('')}</select><button class="btn sm p" id="ni">+ New institute</button><button class="btn sm" id="lo">Logout</button></div>
-<div class="wrap">${i?`<div>${[['att','Attendance'],['fee','Fees'],['ann','Events & Notices'],['stu',L[1]+' & Students'],['log','Messages'],['set','Settings']].map(([k,n])=>`<span class="pill ${S.tab==k?'on':''}" data-t="${k}">${n}</span>`).join('')}</div><div id="main"></div>`:'<div class="card"><h2>Welcome</h2><p>Pehle "+ New institute" se apna cc ya schl banao.</p></div>'}</div>`;
+const nav=[['dash','🏠','Home'],['att','📋','Attendance'],['fee','💰','Fees'],['ann','📣','Notices'],['stu','👥',S.L[1]]];
+$('#app').innerHTML=`<div class="top"><div class="brand">🎓 Institute Desk</div><select id="is">${S.insts.map(x=>`<option value="${x.id}" ${x.id==S.inst?'selected':''}>${esc(x.name)} (${x.type})</option>`).join('')}</select><button class="btn sm p" id="ni">+ New</button><button class="btn sm" data-t="log">📨</button><button class="btn sm" data-t="set">⚙️</button><button class="btn sm" id="lo">Exit</button></div><div class="wrap">${i?'<div id="main"></div>':'<div class="hero"><h1>Welcome 👋</h1><p>"+ New" dabake apna pehla cc ya schl banao.</p></div>'}</div>${i?`<div class="nav">${nav.map(([k,e,n])=>`<span class="${S.tab==k?'on':''}" data-t="${k}"><i>${e}</i>${n}</span>`).join('')}</div>`:''}`;
 $('#is').onchange=e=>{S.inst=+e.target.value;S.sec=null;frame()};$('#lo').onclick=()=>{sessionStorage.t=T='';login()};
 $('#ni').onclick=()=>run(async()=>{const r=await ask(`<h2>New institute</h2><label>Name</label><input id="n" style="width:100%"><label>Type</label><select id="t"><option value="cc">Coaching centre (batches)</option><option value="schl">School / college (classes)</option></select>`,()=>({name:$('#n').value,type:$('#t').value}));if(r){const x=await api('inst','POST',r);S.inst=x.id;boot()}});
 document.querySelectorAll('[data-t]').forEach(e=>e.onclick=()=>{S.tab=e.dataset.t;frame()});if(i)run(views[S.tab])}
@@ -43,16 +58,22 @@ async function secBar(after){S.secs=await api('sec?inst='+S.inst);if(!S.secs.fin
 return `<div class="card">${S.secs.map(s=>`<span class="pill ${s.id==S.sec?'on':''}" data-s="${s.id}">${esc(s.name)} · ${s.n}</span>`).join('')||`<span class="mut">Koi ${S.L[0].toLowerCase()} nahi hai, "${S.L[1]} & Students" tab mein banao.</span>`}</div>`}
 function bindSec(f){document.querySelectorAll('[data-s]').forEach(e=>e.onclick=()=>{S.sec=+e.dataset.s;run(f)})}
 const views={
+async dash(){const i=cur(),s=await api('stats?inst='+S.inst),hr=new Date().getHours(),g=hr<12?'Good morning':hr<17?'Good afternoon':'Good evening';
+$('#main').innerHTML=`<div class="hero"><p>${g} 👋</p><h1>${esc(i.name)}</h1><p>${new Date().toLocaleDateString('en-IN',{weekday:'long',day:'numeric',month:'long'})}</p></div>
+<div class="stats">${[['Students',s.students,'#0f8b8d'],['Present today',s.present,'#16a34a'],['Absent today',s.absent,'#e11d48'],['Fees pending',s.pending,'#f59e0b']].map(([n,v,c],k)=>`<div class="stat" style="background:${c};animation-delay:${k*.08}s"><b>${v}</b><span>${n}</span></div>`).join('')}</div>
+<div class="card"><h2>Quick actions</h2><p class="mut">${s.sections} ${S.L[1].toLowerCase()} · ${s.msgs} messages aaj</p><div class="row"><button class="btn p" data-t="att">📋 Attendance lo</button><button class="btn" data-t="fee">💰 Fees approve</button><button class="btn" data-t="ann">📣 Notice bhejo</button></div></div>
+<div class="card"><div class="row"><b style="flex:1">Is mahine ki fees</b><span>${s.paid}/${s.students}</span></div><div class="bar2"><i style="width:${s.students?Math.round(s.paid/s.students*100):0}%"></i></div></div>`;
+document.querySelectorAll('#main [data-t]').forEach(e=>e.onclick=()=>{S.tab=e.dataset.t;frame()})},
 async att(){const h=await secBar(),m=$('#main');m.innerHTML=h+`<div class="card" id="box"></div>`;bindSec(views.att);if(!S.sec)return;
 const rows=await api(`att?sec=${S.sec}&day=${S.day}`);const ab=new Set(rows.filter(r=>r.status=='A').map(r=>r.id));
 const draw=()=>{$('#box').innerHTML=`<div class="row"><b>Date</b><input type="date" id="d" value="${S.day}"><span class="tag ok">Present ${rows.length-ab.size}</span><span class="tag no">Absent ${ab.size}</span><button class="btn sm" id="ap">All present</button><button class="btn p" id="sv">Save & alert parents</button></div>
-<table><tr><th>Roll</th><th>Name</th><th></th></tr>${rows.map(r=>`<tr class="${ab.has(r.id)?'abs':''}"><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td><button class="btn sm ${ab.has(r.id)?'d':''}" data-id="${r.id}">${ab.has(r.id)?'Absent':'Present'}</button></td></tr>`).join('')}</table>`;
+<table><tr><th>Roll</th><th>Name</th><th></th></tr>${rows.map(r=>`<tr class="${ab.has(r.id)?'abs':''}"><td>${esc(r.roll)}</td><td>${av(r.name)}${esc(r.name)}</td><td><button class="tg ${ab.has(r.id)?'a':'p'}" data-id="${r.id}">${ab.has(r.id)?'Absent':'Present'}</button></td></tr>`).join('')}</table>`;
 $('#d').onchange=e=>{S.day=e.target.value;run(views.att)};$('#ap').onclick=()=>{ab.clear();draw()};
 document.querySelectorAll('[data-id]').forEach(b=>b.onclick=()=>{const id=+b.dataset.id;ab.has(id)?ab.delete(id):ab.add(id);draw()});
 $('#sv').onclick=()=>run(async()=>{if(await ask(`<h2>Save attendance?</h2><p>${ab.size} absent bachhon ke parents ko WhatsApp par absent message jayega (date: ${S.day}).</p>`)){const r=await api('att','POST',{sec:S.sec,day:S.day,absent:[...ab]});toast(`Saved. ${r.alerts} alert queued`)}})};draw()},
 async fee(){const h=await secBar();$('#main').innerHTML=h+`<div class="card" id="box"></div>`;bindSec(views.fee);if(!S.sec)return;const rows=await api(`fee?sec=${S.sec}&month=${S.month}`);
 $('#box').innerHTML=`<div class="row"><b>Month</b><input type="month" id="m" value="${S.month}"><span class="tag ok">Cleared ${rows.filter(r=>r.status=='cleared').length}</span><span class="tag no">Pending ${rows.filter(r=>r.status!='cleared').length}</span><button class="btn sm" id="rm">Send reminders to all pending</button></div>
-<table><tr><th>Roll</th><th>Name</th><th>Status</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td class="${r.status=='cleared'?'ok':'no'}">${r.status=='cleared'?'Cleared '+r.cleared:'Pending'}</td><td>${r.status=='cleared'?'':`<button class="btn sm p" data-c="${r.id}">Approve</button>`}</td></tr>`).join('')}</table>`;
+<table><tr><th>Roll</th><th>Name</th><th>Status</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.roll)}</td><td>${av(r.name)}${esc(r.name)}</td><td class="${r.status=='cleared'?'ok':'no'}">${r.status=='cleared'?'Cleared '+r.cleared:'Pending'}</td><td>${r.status=='cleared'?'':`<button class="btn sm p" data-c="${r.id}">Approve</button>`}</td></tr>`).join('')}</table>`;
 $('#m').onchange=e=>{S.month=e.target.value;run(views.fee)};
 $('#rm').onclick=()=>run(async()=>{if(await ask(`<h2>Send reminders?</h2><p>Is institute ke saare pending parents ko ${S.month} ki fees ka reminder jayega.</p>`)){toast((await api('fee/remind','POST',{inst:S.inst,month:S.month})).sent+' reminders queued')}});
 document.querySelectorAll('[data-c]').forEach(b=>b.onclick=()=>run(async()=>{if(await ask('<h2>Approve fees?</h2><p>Fees cleared mark hongi aur parent ko "fees received" message jayega.</p>')){await api('fee/clear','POST',{stu:+b.dataset.c,month:S.month});toast('Approved');views.fee()}}))},
@@ -64,7 +85,7 @@ async stu(){const h=await secBar();$('#main').innerHTML=h+`<div class="card"><di
 $('#sa').onclick=()=>run(async()=>{const n=$('#sn').value.trim();if(n&&await ask(`<p>${S.L[0]} "${esc(n)}" banayein?</p>`)){S.sec=(await api('sec','POST',{inst:S.inst,name:n})).id;views.stu()}});
 if($('#sx'))$('#sx').onclick=()=>run(async()=>{if(await ask('<h2>Delete?</h2><p>Is section ke saare students bhi delete honge.</p>')){await api('sec/'+S.sec,'DELETE');S.sec=null;views.stu()}});if(!S.sec)return;
 const rows=await api('stu?sec='+S.sec);$('#box').innerHTML=`<div class="card"><h2>Students (${rows.length})</h2><label>Bulk add: har line mein  Naam, Parent WhatsApp number, Roll no</label><textarea id="bk" placeholder="Rahul Sharma, 9876543210, 1&#10;Anita Verma, 9811122233, 2"></textarea><div style="margin-top:10px"><button class="btn p" id="ba">Add students</button></div></div>
-<div class="card"><table><tr><th>Roll</th><th>Name</th><th>Parent number</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.roll)}</td><td>${esc(r.name)}</td><td>${esc(r.phone)}</td><td><button class="btn sm d" data-x="${r.id}">Remove</button></td></tr>`).join('')}</table></div>`;
+<div class="card"><table><tr><th>Roll</th><th>Name</th><th>Parent number</th><th></th></tr>${rows.map(r=>`<tr><td>${esc(r.roll)}</td><td>${av(r.name)}${esc(r.name)}</td><td>${esc(r.phone)}</td><td><button class="btn sm d" data-x="${r.id}">Remove</button></td></tr>`).join('')}</table></div>`;
 $('#ba').onclick=()=>run(async()=>{if(await ask('<p>In students ko add karein?</p>')){toast((await api('stu/bulk','POST',{sec:S.sec,text:$('#bk').value})).added+' added');views.stu()}});
 document.querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>run(async()=>{if(await ask('<p>Student hataayein?</p>')){await api('stu/'+b.dataset.x,'DELETE');views.stu()}}))},
 async log(){const r=await api('log?inst='+S.inst);$('#main').innerHTML=`<div class="card"><div class="row"><h2 style="flex:1">Message log</h2><button class="btn sm" id="e1">Export students CSV</button><button class="btn sm" id="e2">Export attendance CSV</button></div><p class="mut">dry-run = abhi WhatsApp token nahi laga, message sirf record hua.</p><table><tr><th>Time</th><th>To</th><th>Type</th><th>Status</th></tr>${r.map(x=>`<tr><td>${new Date(x.ts).toLocaleString('en-IN')}</td><td>${x.phone}</td><td>${x.kind}</td><td class="${x.status=='failed'?'no':x.status=='sent'?'ok':'mut'}">${x.status} ${esc(x.info)}</td></tr>`).join('')}</table></div>`;
