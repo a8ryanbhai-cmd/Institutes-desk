@@ -4,7 +4,7 @@
 const http = require('http'), fs = require('fs'), path = require('path'), crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
 try { process.loadEnvFile(path.join(__dirname, '.env')); } catch {}
-const PORT = process.env.PORT || 3000, ADMIN_PASS = process.env.OWNER_PASSWORD || 'change-me';
+const PORT = process.env.PORT || 3000, BOOT_RANDOM = !process.env.OWNER_PASSWORD, ADMIN_PASS = process.env.OWNER_PASSWORD || crypto.randomBytes(9).toString('hex');
 const BASE = (process.env.BASE_URL || `http://localhost:${PORT}`).replace(/\/$/, '');
 const UP = process.env.UPLOAD_DIR || path.join(__dirname, 'uploads'); fs.mkdirSync(UP, { recursive: true });
 const db = new DatabaseSync(process.env.DB || path.join(__dirname, 'data.db'));
@@ -19,6 +19,9 @@ create table if not exists sent(key text primary key);
 create table if not exists users(id integer primary key,username text unique,name text,role text,inst integer,sec integer,salt text,hash text,active integer default 1,last_login text);
 create table if not exists activity(id integer primary key,ts text,uname text,role text,inst integer,action text,detail text);`);
 try { db.exec('alter table inst add column active integer default 1'); } catch {}
+db.exec(`create table if not exists admin(id integer primary key check(id=1),username text,salt text,hash text,updated text);
+create table if not exists col(id integer primary key,inst integer,name text,type text,opts text default '');`);
+try { db.exec("alter table stu add column extra text default '{}'"); } catch {}
 const Q = (s, ...a) => db.prepare(s).all(...a), G = (s, ...a) => db.prepare(s).get(...a), R = (s, ...a) => db.prepare(s).run(...a);
 const E = (m, status = 400) => Object.assign(new Error(m), { status });
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
@@ -34,10 +37,10 @@ process.on('uncaughtException', e => console.error('uncaught', e)); process.on('
 const hashPw = (p, salt = crypto.randomBytes(16).toString('hex')) => ({ salt, hash: crypto.scryptSync(p, salt, 32).toString('hex') });
 const okPw = (p, u) => { const a = Buffer.from(crypto.scryptSync(p, u.salt, 32).toString('hex')), b = Buffer.from(u.hash); return a.length === b.length && crypto.timingSafeEqual(a, b); };
 const sha = s => crypto.createHash('sha256').update(String(s)).digest();
-const sessions = new Map(), tries = new Map(), TTL = 12 * 3600e3;
+const sessions = new Map(), tries = new Map(), TTL = 30 * 60e3;
 setInterval(() => { const n = Date.now(); for (const [k, v] of sessions) if (v.exp < n) sessions.delete(k); for (const [k, v] of tries) if (v.until < n) tries.delete(k); }, 600e3);
 const authUser = tok => {
-  const s = sessions.get(tok); if (!s || s.exp < Date.now()) return null;
+  const s = sessions.get(tok); if (!s || s.exp < Date.now()) return null; s.exp = Date.now() + TTL;
   if (s.role === 'super') return { role: 'super', name: 'Administrator', username: 'admin' };
   const r = G('select * from users where id=?', s.uid); if (!r || !r.active) return null;
   const i = G('select active from inst where id=?', r.inst); if (!i || i.active === 0) return null;
@@ -81,23 +84,44 @@ setInterval(() => { Q('select * from inst where active!=0').forEach(i => dueRemi
   R('delete from activity where id < (select coalesce(max(id),0)-5000 from activity)'); R('delete from log where id < (select coalesce(max(id),0)-20000 from log)'); }, 3600e3);
 const queue = fn => { fn().catch(e => console.error('queue', e)); };
 
+// ---------- student columns ----------
+const colsOf = inst => Q('select * from col where inst=? order by id', inst);
+const colFor = (u, id) => { const c = G('select * from col where id=?', +id); if (!c) throw E('Column not found', 404); instFor(u, c.inst); return c; };
+const optsOf = v => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\n,]/)).map(x => str(x, 40).replace(/\|/g, '')).filter(Boolean))].slice(0, 20).join('|');
+const cleanBase = b => { const name = str(b.name, 80), phone = norm(b.phone || ''), roll = str(b.roll, 10); if (!name) throw E('Name is required'); if (phone.length < 10 || phone.length > 15) throw E(`Enter a valid parent number for ${name}`); return { name, phone, roll }; };
+const cleanExtra = (inst, ex) => { const out = {}; for (const c of colsOf(inst)) { const v = str((ex || {})[c.id], 200); if (v === '') continue;
+  if (c.type === 'number' && !/^-?\d+(\.\d+)?$/.test(v)) throw E(`${c.name} must be a number`); if (c.type === 'date' && !isDay(v)) throw E(`${c.name} must be a date`);
+  if (c.type === 'dropdown' && !c.opts.split('|').includes(v)) throw E(`${c.name}: choose one of the listed options`); out[c.id] = v; } return JSON.stringify(out); };
+const killOtherAdmin = req => { const keep = (req.headers.authorization || '').slice(7); for (const [k, v] of sessions) if (v.role === 'super' && k !== keep) sessions.delete(k); };
+
 // ---------- routes: [method, regex, handler(m, body, query, user, req), isPublic] ----------
 const ipOf = req => (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
 const routes = [
   ['POST', /^\/api\/login$/, (_, b, __, ___, req) => {
     const ip = ipOf(req), t = tries.get(ip); if (t && t.n >= 8 && t.until > Date.now()) throw E('Too many attempts. Try again in a few minutes.', 429);
     const un = str(b.username, 40).toLowerCase(), pw = String(b.password || '').slice(0, 200); let ses = null, msg = 'Wrong username or password';
-    if (un === '' || un === 'admin') { if (crypto.timingSafeEqual(sha(pw), sha(ADMIN_PASS))) ses = { role: 'super' }; }
+    if (!un || un === 'admin') { /* the administrator signs in at /admin only */ }
     else { const r = G('select * from users where username=?', un);
       if (r && r.active && okPw(pw, r)) { const i = G('select active from inst where id=?', r.inst); if (i && i.active !== 0) { ses = { role: r.role, uid: r.id }; R('update users set last_login=? where id=?', new Date().toISOString(), r.id); } else msg = 'This institute account is suspended. Contact the administrator.'; } }
     if (!ses) { tries.set(ip, { n: (t && t.until > Date.now() ? t.n : 0) + 1, until: Date.now() + 600e3 }); throw E(msg, 401); }
     tries.delete(ip); const token = crypto.randomBytes(24).toString('hex'); sessions.set(token, { ...ses, exp: Date.now() + TTL });
     act(ses.role === 'super' ? { username: 'admin', role: 'super' } : authUser(token), 'login', ''); return { token }; }, true],
+  ['POST', /^\/api\/admin\/login$/, (_, b, __, ___, req) => {
+    const ip = 'adm:' + ipOf(req), t = tries.get(ip); if (t && t.n >= 6 && t.until > Date.now()) throw E('Too many attempts. Try again in a few minutes.', 429);
+    const un = str(b.username, 40).toLowerCase(), pw = String(b.password || '').slice(0, 200), row = G('select * from admin where id=1'), eq = (x, y) => crypto.timingSafeEqual(sha(x), sha(y));
+    // custom login saved in the panel; blank username + server OWNER_PASSWORD is the recovery route
+    const ok = row ? ((un && un === row.username && okPw(pw, row)) || (!un && eq(pw, ADMIN_PASS))) : (eq(pw, ADMIN_PASS) && (!un || un === 'admin'));
+    if (!ok) { tries.set(ip, { n: (t && t.until > Date.now() ? t.n : 0) + 1, until: Date.now() + 600e3 }); throw E('Wrong username or password', 401); }
+    tries.delete(ip); const token = crypto.randomBytes(24).toString('hex'); sessions.set(token, { role: 'super', exp: Date.now() + TTL });
+    act({ username: row?.username || 'admin', role: 'super' }, 'admin login', ''); return { token }; }, true],
+  ['GET', /^\/api\/admin\/account$/, (_, __, ___, u) => { needSuper(u); const r = G('select username,updated from admin where id=1'); return { custom: !!r, username: r?.username || null, updated: r?.updated || null }; }],
+  ['POST', /^\/api\/admin\/account$/, (_, b, __, u, req) => { needSuper(u); const un = str(b.username, 30).toLowerCase();
+    if (!/^[a-z0-9._-]{3,30}$/.test(un)) throw E('Username: 3-30 letters, numbers or ._-'); if (String(b.password || '').length < 8) throw E('Password must be at least 8 characters'); if (b.password !== b.confirm) throw E('The two passwords do not match');
+    const h = hashPw(String(b.password)); R('insert or replace into admin(id,username,salt,hash,updated) values(1,?,?,?,?)', un, h.salt, h.hash, new Date().toISOString()); killOtherAdmin(req); act(u, 'changed admin login'); return { ok: 1 }; }],
+  ['DELETE', /^\/api\/admin\/account$/, (_, __, ___, u, req) => { needSuper(u); R('delete from admin where id=1'); killOtherAdmin(req); act(u, 'reset admin login to the server password'); return { ok: 1 }; }],
   ['GET', /^\/api\/me$/, (_, __, ___, u) => ({ role: u.role, name: u.name, username: u.username, inst: u.inst ?? null, sec: u.sec ?? null })],
   ['POST', /^\/api\/logout$/, (_, __, ___, u, req) => { sessions.delete((req.headers.authorization || '').slice(7)); return { ok: 1 }; }],
-  ['POST', /^\/api\/password$/, (_, b, __, u) => { if (u.role === 'super') throw E('Change the administrator password in the server environment (OWNER_PASSWORD)');
-    const r = G('select * from users where id=?', u.id); if (!okPw(String(b.old || ''), r)) throw E('Current password is wrong'); if (String(b.new || '').length < 6) throw E('New password must be at least 6 characters');
-    const h = hashPw(String(b.new)); R('update users set salt=?,hash=? where id=?', h.salt, h.hash, u.id); act(u, 'changed own password'); return { ok: 1 }; }],
+  ['POST', /^\/api\/password$/, () => { throw E('Passwords are managed by your administrator', 403); }],
 
   // institutes
   ['GET', /^\/api\/inst$/, (_, __, ___, u) => (u.role === 'super' ? Q('select * from inst order by id') : Q('select * from inst where id=?', u.inst)).map(pub)],
@@ -144,12 +168,25 @@ const routes = [
     R('delete from att where stu in (select id from stu where sec=?)', s.id); R('delete from fee where stu in (select id from stu where sec=?)', s.id); R('delete from stu where sec=?', s.id); R('update users set sec=null where sec=?', s.id); R('delete from sec where id=?', s.id); act(u, 'deleted class', s.name, s.inst); return { ok: 1 }; }],
 
   // students
-  ['GET', /^\/api\/stu$/, (_, __, q, u) => Q('select * from stu where sec=? order by cast(roll as integer),name', secFor(u, q.sec).id)],
-  ['POST', /^\/api\/stu\/bulk$/, (_, b, __, u) => { const s = secFor(u, b.sec); let n = 0, skip = 0;
-    for (const line of String(b.text).split('\n').slice(0, 500)) { const [name, phone, roll] = line.split(/[,\t]/).map(x => x.trim()); const p = norm(phone || '');
-      if (name && p.length >= 10 && p.length <= 15) { R('insert into stu(inst,sec,name,roll,phone) values(?,?,?,?,?)', s.inst, s.id, name.slice(0, 80), (roll || '').slice(0, 10), p); n++; } else if (line.trim()) skip++; }
-    act(u, 'added students', `${n} to ${s.name}`, s.inst); return { added: n, skipped: skip }; }],
-  ['DELETE', /^\/api\/stu\/(\d+)$/, (m, _, __, u) => { needAdm(u); const s = stuFor(u, m[1]); R('delete from att where stu=?', s.id); R('delete from fee where stu=?', s.id); R('delete from stu where id=?', s.id); act(u, 'removed student', s.name, s.inst); return { ok: 1 }; }],
+  ['GET', /^\/api\/stu$/, (_, __, q, u) => Q('select * from stu where sec=? order by cast(roll as integer),name', secFor(u, q.sec).id).map(r => ({ ...r, extra: JSON.parse(r.extra || '{}') }))],
+  ['GET', /^\/api\/cols$/, (_, __, q, u) => colsOf(instFor(u, q.inst).id).map(c => ({ ...c, opts: c.opts ? c.opts.split('|') : [] }))],
+  ['POST', /^\/api\/cols$/, (_, b, __, u) => { const i = instFor(u, b.inst), name = str(b.name, 40), type = ['text', 'date', 'number', 'dropdown'].includes(b.type) ? b.type : 'text', all = colsOf(i.id);
+    if (!name) throw E('Column name is required'); if (all.length >= 30) throw E('Maximum 30 extra columns'); if (all.some(c => c.name.toLowerCase() === name.toLowerCase())) throw E('That column already exists');
+    const opts = type === 'dropdown' ? optsOf(b.opts) : ''; if (type === 'dropdown' && !opts) throw E('Add at least one option');
+    const id = Number(R('insert into col(inst,name,type,opts) values(?,?,?,?)', i.id, name, type, opts).lastInsertRowid); act(u, 'added column', name, i.id); return { id }; }],
+  ['PUT', /^\/api\/cols\/(\d+)$/, (m, b, __, u) => { const c = colFor(u, m[1]), name = str(b.name, 40) || c.name, opts = c.type === 'dropdown' ? (optsOf(b.opts) || c.opts) : '';
+    R('update col set name=?,opts=? where id=?', name, opts, c.id); act(u, 'edited column', name, c.inst); return { ok: 1 }; }],
+  ['DELETE', /^\/api\/cols\/(\d+)$/, (m, _, __, u) => { needAdm(u); const c = colFor(u, m[1]); R('delete from col where id=?', c.id); act(u, 'deleted column', c.name, c.inst); return { ok: 1 }; }],
+  ['POST', /^\/api\/stu$/, (_, b, __, u) => { const s = secFor(u, b.sec), x = cleanBase(b), ex = cleanExtra(s.inst, b.extra);
+    const id = Number(R('insert into stu(inst,sec,name,roll,phone,extra) values(?,?,?,?,?,?)', s.inst, s.id, x.name, x.roll, x.phone, ex).lastInsertRowid); act(u, 'added student', `${x.name} to ${s.name}`, s.inst); return { id }; }],
+  ['PUT', /^\/api\/stu\/(\d+)$/, (m, b, __, u) => { const s = stuFor(u, m[1]), x = cleanBase(b), ex = cleanExtra(s.inst, b.extra);
+    R('update stu set name=?,roll=?,phone=?,extra=? where id=?', x.name, x.roll, x.phone, ex, s.id); act(u, 'edited student', x.name, s.inst); return { ok: 1 }; }],
+  ['POST', /^\/api\/stu\/bulk$/, (_, b, __, u) => { const s = secFor(u, b.sec), cols = colsOf(s.inst); let n = 0, skip = 0; // columns: Name, Number, Roll, then your extra columns (tab-separated from Excel/Sheets, or comma-separated)
+    for (const line of String(b.text).split('\n').slice(0, 500)) { if (!line.trim()) continue; const p = (line.includes('\t') ? line.split('\t') : line.split(',')).map(x => x.trim());
+      try { const x = cleanBase({ name: p[0], phone: p[1], roll: p[2] }), ex = {}; cols.forEach((c, k) => { if (p[3 + k]) ex[c.id] = p[3 + k]; });
+        R('insert into stu(inst,sec,name,roll,phone,extra) values(?,?,?,?,?,?)', s.inst, s.id, x.name, x.roll, x.phone, cleanExtra(s.inst, ex)); n++; } catch { skip++; } }
+    act(u, 'imported students', `${n} to ${s.name}`, s.inst); return { added: n, skipped: skip }; }],
+  ['DELETE', /^\/api\/stu\/(\d+)$/, (m, _, __, u) => { const s = stuFor(u, m[1]); R('delete from att where stu=?', s.id); R('delete from fee where stu=?', s.id); R('delete from stu where id=?', s.id); act(u, 'removed student', s.name, s.inst); return { ok: 1 }; }],
 
   // attendance
   ['GET', /^\/api\/att$/, (_, __, q, u) => { if (!isDay(q.day)) throw E('Invalid date'); return Q(`select s.id,s.name,s.roll,coalesce(a.status,'P') status,a.status saved from stu s left join att a on a.stu=s.id and a.day=? where s.sec=? order by cast(s.roll as integer),s.name`, q.day, secFor(u, q.sec).id); }],
@@ -195,10 +232,12 @@ const MIME = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/
 const readBody = req => new Promise((res, rej) => { let n = 0; const c = []; req.on('data', d => { n += d.length; if (n > 12e6) { rej(E('Request too large', 413)); req.destroy(); } else c.push(d); });
   req.on('end', () => { try { res(c.length ? JSON.parse(Buffer.concat(c).toString()) : {}); } catch { rej(E('Invalid request')); } }); req.on('error', rej); });
 http.createServer(async (req, res) => {
-  const u = new URL(req.url, BASE), H = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin' };
+  const u = new URL(req.url, BASE), H = { 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY', 'Referrer-Policy': 'same-origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+    'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    ...(req.headers['x-forwarded-proto'] === 'https' ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}) };
   const send = (c, d, t = 'application/json') => { res.writeHead(c, { ...H, 'Content-Type': t, 'Cache-Control': 'no-store' }); res.end(t === 'application/json' ? JSON.stringify(d) : d); };
   try {
-    if (u.pathname === '/') return send(200, fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f))), 'text/html; charset=utf-8');
+    if (u.pathname === '/' || u.pathname === '/admin') return send(200, fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f))), 'text/html; charset=utf-8');
     if (u.pathname.startsWith('/files/')) { const f = path.join(UP, path.basename(u.pathname)); if (!fs.existsSync(f)) return send(404, {});
       res.writeHead(200, { ...H, 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream' }); return res.end(fs.readFileSync(f)); }
     for (const [method, re, fn, open] of routes) {
@@ -209,4 +248,4 @@ http.createServer(async (req, res) => {
     }
     send(404, { error: 'Not found' });
   } catch (e) { if (!e.status) console.error(e); send(e.status || 400, { error: e.status ? e.message : (e.message || 'Something went wrong') }); }
-}).listen(PORT, () => console.log(`Institute Desk running on ${BASE}` + (ADMIN_PASS === 'change-me' ? '  (set OWNER_PASSWORD in .env!)' : '')));
+}).listen(PORT, () => console.log(`Institute Desk running on ${BASE}` + (BOOT_RANDOM ? `\nOWNER_PASSWORD is not set. Temporary admin password for /admin: ${ADMIN_PASS}` : '')));
