@@ -35,7 +35,8 @@ process.on('uncaughtException', e => console.error('uncaught', e)); process.on('
 
 // ---------- passwords, sessions, login throttle ----------
 const hashPw = (p, salt = crypto.randomBytes(16).toString('hex')) => ({ salt, hash: crypto.scryptSync(p, salt, 32).toString('hex') });
-const okPw = (p, u) => { const a = Buffer.from(crypto.scryptSync(p, u.salt, 32).toString('hex')), b = Buffer.from(u.hash); return a.length === b.length && crypto.timingSafeEqual(a, b); };
+const okPwRaw = (p, u) => { const a = Buffer.from(crypto.scryptSync(p, u.salt, 32).toString('hex')), b = Buffer.from(u.hash); return a.length === b.length && crypto.timingSafeEqual(a, b); };
+const okPw = (p, u) => okPwRaw(p, u) || okPwRaw(p.trim(), u);
 const sha = s => crypto.createHash('sha256').update(String(s)).digest();
 const sessions = new Map(), tries = new Map(), TTL = 30 * 60e3;
 setInterval(() => { const n = Date.now(); for (const [k, v] of sessions) if (v.exp < n) sessions.delete(k); for (const [k, v] of tries) if (v.until < n) tries.delete(k); }, 600e3);
@@ -108,7 +109,7 @@ const routes = [
     act(ses.role === 'super' ? { username: 'admin', role: 'super' } : authUser(token), 'login', ''); return { token }; }, true],
   ['POST', /^\/api\/admin\/login$/, (_, b, __, ___, req) => {
     const ip = 'adm:' + ipOf(req), t = tries.get(ip); if (t && t.n >= 6 && t.until > Date.now()) throw E('Too many attempts. Try again in a few minutes.', 429);
-    const un = str(b.username, 40).toLowerCase(), pw = String(b.password || '').slice(0, 200), row = G('select * from admin where id=1'), eq = (x, y) => crypto.timingSafeEqual(sha(x), sha(y));
+    const un = str(b.username, 40).toLowerCase(), pw = String(b.password || '').slice(0, 200), row = G('select * from admin where id=1'), eq = (x, y) => crypto.timingSafeEqual(sha(x), sha(y)) || crypto.timingSafeEqual(sha(x.trim()), sha(y));
     // custom login saved in the panel; blank username + server OWNER_PASSWORD is the recovery route
     const ok = row ? ((un && un === row.username && okPw(pw, row)) || (!un && eq(pw, ADMIN_PASS))) : (eq(pw, ADMIN_PASS) && (!un || un === 'admin'));
     if (!ok) { tries.set(ip, { n: (t && t.until > Date.now() ? t.n : 0) + 1, until: Date.now() + 600e3 }); throw E('Wrong username or password', 401); }
@@ -117,7 +118,7 @@ const routes = [
   ['GET', /^\/api\/admin\/account$/, (_, __, ___, u) => { needSuper(u); const r = G('select username,updated from admin where id=1'); return { custom: !!r, username: r?.username || null, updated: r?.updated || null }; }],
   ['POST', /^\/api\/admin\/account$/, (_, b, __, u, req) => { needSuper(u); const un = str(b.username, 30).toLowerCase();
     if (!/^[a-z0-9._-]{3,30}$/.test(un)) throw E('Username: 3-30 letters, numbers or ._-'); if (String(b.password || '').length < 8) throw E('Password must be at least 8 characters'); if (b.password !== b.confirm) throw E('The two passwords do not match');
-    const h = hashPw(String(b.password)); R('insert or replace into admin(id,username,salt,hash,updated) values(1,?,?,?,?)', un, h.salt, h.hash, new Date().toISOString()); killOtherAdmin(req); act(u, 'changed admin login'); return { ok: 1 }; }],
+    const h = hashPw(String(b.password).trim()); R('insert or replace into admin(id,username,salt,hash,updated) values(1,?,?,?,?)', un, h.salt, h.hash, new Date().toISOString()); killOtherAdmin(req); act(u, 'changed admin login'); return { ok: 1 }; }],
   ['DELETE', /^\/api\/admin\/account$/, (_, __, ___, u, req) => { needSuper(u); R('delete from admin where id=1'); killOtherAdmin(req); act(u, 'reset admin login to the server password'); return { ok: 1 }; }],
   ['GET', /^\/api\/me$/, (_, __, ___, u) => ({ role: u.role, name: u.name, username: u.username, inst: u.inst ?? null, sec: u.sec ?? null })],
   ['POST', /^\/api\/logout$/, (_, __, ___, u, req) => { sessions.delete((req.headers.authorization || '').slice(7)); return { ok: 1 }; }],
@@ -130,7 +131,7 @@ const routes = [
       list: Q(`select i.*,(select count(*) from stu where inst=i.id) students,(select count(*) from sec where inst=i.id) sections,(select count(*) from users where inst=i.id) accounts,(select max(ts) from activity where inst=i.id) last from inst i order by id`)
         .map(i => ({ ...pub(i), students: i.students, sections: i.sections, accounts: i.accounts, last: i.last })) }; }],
   ['POST', /^\/api\/inst$/, (_, b, __, u) => { needSuper(u); const name = str(b.name, 80), un = str(b.username, 30).toLowerCase(); if (!name) throw E('Institute name is required'); validUser(un, b.password);
-    const id = Number(R('insert into inst(name,type) values(?,?)', name, b.type === 'schl' ? 'schl' : 'cc').lastInsertRowid), h = hashPw(String(b.password));
+    const id = Number(R('insert into inst(name,type) values(?,?)', name, b.type === 'schl' ? 'schl' : 'cc').lastInsertRowid), h = hashPw(String(b.password).trim());
     R('insert into users(username,name,role,inst,salt,hash) values(?,?,?,?,?,?)', un, str(b.head_name, 60) || (b.type === 'schl' ? 'Principal' : 'Director'), 'head', id, h.salt, h.hash);
     act(u, 'created institute', `${name} (login: ${un})`, id); return { id }; }],
   ['PUT', /^\/api\/inst\/(\d+)$/, (m, b, __, u) => { needAdm(u); const i = instFor(u, m[1]), c = b.cfg || {}, old = cfgOf(i), cfg = { color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : old.color, feeDay: Math.min(28, Math.max(1, +c.feeDay || old.feeDay)), lang: str(c.lang, 10) || old.lang, tpl: { ...old.tpl } };
@@ -147,10 +148,10 @@ const routes = [
   ['POST', /^\/api\/users$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), un = str(b.username, 30).toLowerCase(); validUser(un, b.password);
     const role = u.role === 'super' && b.role === 'head' ? 'head' : 'staff'; let sec = null;
     if (role === 'staff') { const s = G('select * from sec where id=? and inst=?', +b.sec, i.id); if (!s) throw E('Choose a class for this teacher'); sec = s.id; }
-    const h = hashPw(String(b.password)); R('insert into users(username,name,role,inst,sec,salt,hash) values(?,?,?,?,?,?,?)', un, str(b.name, 60) || un, role, i.id, sec, h.salt, h.hash);
+    const h = hashPw(String(b.password).trim()); R('insert into users(username,name,role,inst,sec,salt,hash) values(?,?,?,?,?,?,?)', un, str(b.name, 60) || un, role, i.id, sec, h.salt, h.hash);
     act(u, 'created account', `${un} (${role})`, i.id); return { ok: 1 }; }],
   ['PUT', /^\/api\/users\/(\d+)$/, (m, b, __, u) => { needAdm(u); const t = G('select * from users where id=?', +m[1]); if (!t) throw E('Account not found', 404); instFor(u, t.inst); if (u.role !== 'super' && t.role !== 'staff') throw E('Not allowed', 403);
-    if (b.password) { if (String(b.password).length < 6) throw E('Password must be at least 6 characters'); const h = hashPw(String(b.password)); R('update users set salt=?,hash=? where id=?', h.salt, h.hash, t.id); }
+    if (b.password) { if (String(b.password).length < 6) throw E('Password must be at least 6 characters'); const h = hashPw(String(b.password).trim()); R('update users set salt=?,hash=? where id=?', h.salt, h.hash, t.id); }
     if (b.active !== undefined) R('update users set active=? where id=?', b.active ? 1 : 0, t.id);
     if (b.sec && t.role === 'staff') { const s = G('select * from sec where id=? and inst=?', +b.sec, t.inst); if (!s) throw E('Class not found'); R('update users set sec=? where id=?', s.id, t.id); }
     act(u, 'updated account', t.username, t.inst); return { ok: 1 }; }],
