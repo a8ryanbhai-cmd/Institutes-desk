@@ -25,7 +25,7 @@ try { db.exec("alter table stu add column extra text default '{}'"); } catch {}
 const Q = (s, ...a) => db.prepare(s).all(...a), G = (s, ...a) => db.prepare(s).get(...a), R = (s, ...a) => db.prepare(s).run(...a);
 const E = (m, status = 400) => Object.assign(new Error(m), { status });
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
-const DEF = { color: '#2563eb', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
+const DEF = { color: '#356AE6', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
 const cfgOf = i => { let c = {}; try { c = JSON.parse(i.cfg || '{}'); } catch {} return { ...DEF, ...c, tpl: { ...DEF.tpl, ...(c.tpl || {}) } }; };
 const norm = p => { const d = String(p).replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
