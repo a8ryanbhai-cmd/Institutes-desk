@@ -63,7 +63,7 @@ async function wa(inst, phone, kind, tpl, params, header) {
   const to = norm(phone); let status = 'dry-run', info = '';
   if (inst.wa_id && inst.wa_token && !process.env.DRY_RUN) {
     const comps = []; if (header) comps.push({ type: 'header', parameters: [header] });
-    comps.push({ type: 'body', parameters: params.map(t => ({ type: 'text', text: String(t).replace(/\s+/g, ' ').trim().slice(0, 900) })) });
+    if (tpl !== 'hello_world') comps.push({ type: 'body', parameters: params.map(t => ({ type: 'text', text: String(t).replace(/\s+/g, ' ').trim().slice(0, 900) })) }); // 'hello_world' is Meta's built-in test template (no variables)
     try {
       const r = await fetch(`https://graph.facebook.com/v21.0/${encodeURIComponent(inst.wa_id)}/messages`, { method: 'POST', headers: { Authorization: 'Bearer ' + inst.wa_token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ messaging_product: 'whatsapp', to, type: 'template', template: { name: tpl, language: { code: cfgOf(inst).lang }, components: comps } }) });
@@ -200,7 +200,7 @@ const routes = [
 
   // fees (teachers can view their class, only head/admin can approve)
   ['GET', /^\/api\/fee$/, (_, __, q, u) => { if (!isMonth(q.month)) throw E('Invalid month'); return Q(`select s.id,s.name,s.roll,coalesce(f.status,'pending') status,f.cleared from stu s left join fee f on f.stu=s.id and f.month=? where s.sec=? order by cast(s.roll as integer),s.name`, q.month, secFor(u, q.sec).id); }],
-  ['POST', /^\/api\/fee\/clear$/, (_, b, __, u) => { needAdm(u); if (!isMonth(b.month)) throw E('Invalid month'); const s = stuFor(u, b.stu), i = instFor(u, s.inst);
+  ['POST', /^\/api\/fee\/clear$/, (_, b, __, u) => { if (!isMonth(b.month)) throw E('Invalid month'); const s = stuFor(u, b.stu), i = instFor(u, s.inst);
     R('insert or replace into fee(stu,month,status,cleared) values(?,?,?,?)', s.id, b.month, 'cleared', today());
     if (once(`paid:${s.id}:${b.month}`)) { mark(`paid:${s.id}:${b.month}`); queue(() => wa(i, s.phone, 'fee-paid', cfgOf(i).tpl.paid, [s.name, b.month, i.name])); }
     act(u, 'approved fees', `${s.name} ${b.month}`, s.inst); return { ok: 1 }; }],
@@ -222,7 +222,9 @@ const routes = [
   ['GET', /^\/api\/stats$/, (_, __, q, u) => { const i = instFor(u, q.inst), d = today(), mo = d.slice(0, 7), c = (s, ...a) => G(s, ...a).c, sf = u.role === 'staff' ? ` and s.sec=${+u.sec || 0}` : '';
     const n = c(`select count(*) c from stu s where s.inst=?${sf}`, i.id), ab = st => c(`select count(*) c from att a join stu s on s.id=a.stu where s.inst=? and a.day=? and a.status=?${sf}`, i.id, d, st);
     const paid = c(`select count(*) c from fee f join stu s on s.id=f.stu where s.inst=? and f.month=? and f.status='cleared'${sf}`, i.id, mo);
-    return { students: n, present: ab('P'), absent: ab('A'), paid, pending: n - paid, sections: c('select count(*) c from sec where inst=?', i.id), msgs: u.role === 'staff' ? null : c('select count(*) c from log where inst=? and ts>=?', i.id, d) }; }],
+    const only = u.role === 'staff' ? ` and s.id=${+u.sec || 0}` : '';
+    const classes = Q(`select s.id,s.name,(select name from users where sec=s.id and role='staff' and active=1 limit 1) teacher,(select count(*) from stu where sec=s.id) n,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=? and a.status='A') absent,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=?) marked from sec s where s.inst=?${only} order by s.name`, d, d, i.id);
+    return { classes, students: n, present: ab('P'), absent: ab('A'), paid, pending: n - paid, sections: c('select count(*) c from sec where inst=?', i.id), msgs: u.role === 'staff' ? null : c('select count(*) c from log where inst=? and ts>=?', i.id, d) }; }],
   ['GET', /^\/api\/log$/, (_, __, q, u) => { needAdm(u); return Q('select * from log where inst=? order by id desc limit 200', instFor(u, q.inst).id); }],
   ['GET', /^\/api\/export$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst); // same columns as the n8n chatbot sheet
     const rows = q.kind === 'attendance' ? Q('select a.day Date,a.stu Student_ID,a.status Status from att a join stu s on s.id=a.stu where s.inst=?', i.id) : Q('select id Student_ID,name Name,roll Roll_No,phone Parent_Phone_1 from stu where inst=?', i.id);
