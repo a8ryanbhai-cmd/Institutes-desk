@@ -25,7 +25,7 @@ try { db.exec("alter table stu add column extra text default '{}'"); } catch {}
 const Q = (s, ...a) => db.prepare(s).all(...a), G = (s, ...a) => db.prepare(s).get(...a), R = (s, ...a) => db.prepare(s).run(...a);
 const E = (m, status = 400) => Object.assign(new Error(m), { status });
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
-const DEF = { color: '#0f8b8d', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
+const DEF = { color: '#2563eb', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
 const cfgOf = i => { let c = {}; try { c = JSON.parse(i.cfg || '{}'); } catch {} return { ...DEF, ...c, tpl: { ...DEF.tpl, ...(c.tpl || {}) } }; };
 const norm = p => { const d = String(p).replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
 const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -225,6 +225,8 @@ const routes = [
     const only = u.role === 'staff' ? ` and s.id=${+u.sec || 0}` : '';
     const classes = Q(`select s.id,s.name,(select name from users where sec=s.id and role='staff' and active=1 limit 1) teacher,(select count(*) from stu where sec=s.id) n,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=? and a.status='A') absent,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=?) marked from sec s where s.inst=?${only} order by s.name`, d, d, i.id);
     return { classes, students: n, present: ab('P'), absent: ab('A'), paid, pending: n - paid, sections: c('select count(*) c from sec where inst=?', i.id), msgs: u.role === 'staff' ? null : c('select count(*) c from log where inst=? and ts>=?', i.id, d) }; }],
+  ['GET', /^\/api\/trend$/, (_, __, q, u) => { const i = instFor(u, q.inst), sf = u.role === 'staff' ? ` and s.sec=${+u.sec || 0}` : ''; // read-only: last 14 days with attendance, for dashboard charts
+    return Q(`select a.day day,sum(a.status='P') present,sum(a.status='A') absent from att a join stu s on s.id=a.stu where s.inst=?${sf} group by a.day order by a.day desc limit 14`, i.id).reverse(); }],
   ['GET', /^\/api\/log$/, (_, __, q, u) => { needAdm(u); return Q('select * from log where inst=? order by id desc limit 200', instFor(u, q.inst).id); }],
   ['GET', /^\/api\/export$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst); // same columns as the n8n chatbot sheet
     const rows = q.kind === 'attendance' ? Q('select a.day Date,a.stu Student_ID,a.status Status from att a join stu s on s.id=a.stu where s.inst=?', i.id) : Q('select id Student_ID,name Name,roll Roll_No,phone Parent_Phone_1 from stu where inst=?', i.id);
