@@ -242,7 +242,8 @@ http.createServer(async (req, res) => {
     ...(req.headers['x-forwarded-proto'] === 'https' ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}) };
   const send = (c, d, t = 'application/json') => { res.writeHead(c, { ...H, 'Content-Type': t, 'Cache-Control': 'no-store' }); res.end(t === 'application/json' ? JSON.stringify(d) : d); };
   try {
-    if (u.pathname === '/' || u.pathname === '/admin') return send(200, fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f))), 'text/html; charset=utf-8');
+    if (u.pathname === '/' || u.pathname === '/admin') { const html = fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f)), 'utf8').replaceAll('%BASE%', BASE); // %BASE% = BASE_URL, used for canonical + social preview links
+      res.writeHead(200, { ...H, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...(u.pathname === '/admin' ? { 'X-Robots-Tag': 'noindex, nofollow' } : {}) }); return res.end(html); }
     if (u.pathname.startsWith('/files/')) { const f = path.join(UP, path.basename(u.pathname)); if (!fs.existsSync(f)) return send(404, {});
       res.writeHead(200, { ...H, 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream' }); return res.end(fs.readFileSync(f)); }
     for (const [method, re, fn, open] of routes) {
