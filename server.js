@@ -144,6 +144,28 @@ const killOtherAdmin = req => { const keep = (req.headers.authorization || '').s
 
 // ---------- routes: [method, regex, handler(m, body, query, user, req), isPublic] ----------
 const ipOf = req => (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+// ---------- Phase 4: principal management (teacher accounts and class assignments) ----------
+// Every function below runs on the server for every request. Hiding a button in the page is never what protects anything.
+const UN_RE = /^[a-z0-9._-]{3,30}$/;
+// the account must be in the caller's own institute, and only the administrator may touch head (principal) accounts
+const teacherFor = (u, id) => { const t = G('select * from users where id=?', +id); if (!t) throw E('Account not found', 404); instFor(u, t.inst); if (u.role !== 'super' && t.role !== 'staff') throw E('Not allowed', 403); return t; };
+const killUser = id => { for (const [k, v] of sessions) if (v.uid === id) sessions.delete(k); }; // a changed password or username signs that person out of every device
+const secName = id => { const s = id ? G('select * from sec where id=?', id) : null; return s ? secLabel(s) : 'no class'; };
+const rivals = (inst, secId, exceptId) => Q("select id,name,username from users where role='staff' and active=1 and inst=? and sec=? and id<>?", inst, secId, exceptId);
+const whoIs = a => a.map(o => o.name || o.username).join(', ');
+// Puts a teacher in one class (secId) or in none (null). A class has one active class teacher, so if somebody else is already there the caller
+// has to pass replace=true, and that person is left without a class. Teachers are only ever moved by this function, called from head/admin routes.
+const placeTeacher = (u, t, secId, replace) => {
+  if (t.role !== 'staff') throw E('Only class teachers are assigned to a class');
+  if (secId === null) { if (t.sec) { R('update users set sec=null where id=?', t.id); act(u, 'unassigned teacher', `${t.username} from ${secName(t.sec)}`, t.inst); } return; }
+  const s = G('select * from sec where id=? and inst=?', secId, t.inst); if (!s) throw E('Class not found', 404);
+  if (t.sec === s.id) return;
+  const others = t.active ? rivals(t.inst, s.id, t.id) : [];
+  if (others.length && !replace) throw E(`${secLabel(s)} already has a class teacher (${whoIs(others)}). Confirm the change to replace them.`, 409);
+  for (const o of others) { R('update users set sec=null where id=?', o.id); act(u, 'unassigned teacher', `${o.username} from ${secLabel(s)} (replaced by ${t.username})`, t.inst); }
+  R('update users set sec=? where id=?', s.id, t.id); act(u, 'assigned teacher', `${t.username}: ${secName(t.sec)} to ${secLabel(s)}`, t.inst);
+};
+
 const routes = [
   ['POST', /^\/api\/login$/, (_, b, __, ___, req) => {
     const ip = ipOf(req), t = tries.get(ip); if (t && t.n >= 8 && t.until > Date.now()) throw E('Too many attempts. Try again in a few minutes.', 429);
@@ -207,18 +229,40 @@ const routes = [
 
   // accounts (principal manages class teachers; admin manages everything)
   ['GET', /^\/api\/users$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst); return Q(`select u.id,u.username,u.name,u.role,u.sec,u.active,u.last_login,(select name||case when coalesce(section,'')<>'' then ' - '||section else '' end from sec where id=u.sec) sec_name from users u where u.inst=? order by u.role,u.id`, i.id); }],
-  ['POST', /^\/api\/users$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), un = str(b.username, 30).toLowerCase(); validUser(un, b.password);
-    const role = u.role === 'super' && b.role === 'head' ? 'head' : 'staff'; let sec = null;
-    if (role === 'staff') { const s = G('select * from sec where id=? and inst=?', +b.sec, i.id); if (!s) throw E('Choose a class for this teacher'); sec = s.id; }
-    const h = hashPw(String(b.password).trim()); R('insert into users(username,name,role,inst,sec,salt,hash) values(?,?,?,?,?,?,?)', un, str(b.name, 60) || un, role, i.id, sec, h.salt, h.hash);
-    act(u, 'created account', `${un} (${role})`, i.id); return { ok: 1 }; }],
-  ['PUT', /^\/api\/users\/(\d+)$/, (m, b, __, u) => { needAdm(u); const t = G('select * from users where id=?', +m[1]); if (!t) throw E('Account not found', 404); instFor(u, t.inst); if (u.role !== 'super' && t.role !== 'staff') throw E('Not allowed', 403);
-    if (b.password) { if (String(b.password).length < 6) throw E('Password must be at least 6 characters'); const h = hashPw(String(b.password).trim()); R('update users set salt=?,hash=? where id=?', h.salt, h.hash, t.id); }
-    if (b.active !== undefined) R('update users set active=? where id=?', b.active ? 1 : 0, t.id);
-    if (b.sec && t.role === 'staff') { const s = G('select * from sec where id=? and inst=?', +b.sec, t.inst); if (!s) throw E('Class not found'); R('update users set sec=? where id=?', s.id, t.id); }
-    act(u, 'updated account', t.username, t.inst); return { ok: 1 }; }],
-  ['DELETE', /^\/api\/users\/(\d+)$/, (m, _, __, u) => { needAdm(u); const t = G('select * from users where id=?', +m[1]); if (!t) throw E('Account not found', 404); instFor(u, t.inst); if (u.role !== 'super' && t.role !== 'staff') throw E('Not allowed', 403);
-    R('delete from users where id=?', t.id); act(u, 'deleted account', t.username, t.inst); return { ok: 1 }; }],
+  ['POST', /^\/api\/users$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), un = str(b.username, 30).toLowerCase(); validUser(un, b.password); if (String(b.password).length > 200) throw E('Password is too long');
+    const role = u.role === 'super' && b.role === 'head' ? 'head' : 'staff', h = hashPw(String(b.password).trim()), sec = role === 'staff' && b.sec ? +b.sec : null; let id;
+    if (sec !== null && !G('select 1 x from sec where id=? and inst=?', sec, i.id)) throw E('Class not found', 404); // a teacher can be created without a class and assigned later
+    db.exec('begin'); try { id = Number(R('insert into users(username,name,role,inst,sec,salt,hash) values(?,?,?,?,?,?,?)', un, str(b.name, 60) || un, role, i.id, null, h.salt, h.hash).lastInsertRowid);
+      if (sec !== null) placeTeacher(u, G('select * from users where id=?', id), sec, !!b.replace); db.exec('commit'); } catch (e) { db.exec('rollback'); throw e; }
+    act(u, 'created account', `${un} (${role})`, i.id); return { id }; }],
+  // one endpoint for every account change: name, username, password, enabled/disabled and class assignment (sec; null = no class)
+  ['PUT', /^\/api\/users\/(\d+)$/, (m, b, __, u) => { needAdm(u); const t = teacherFor(u, m[1]), fresh = () => G('select * from users where id=?', t.id); let kill = false;
+    db.exec('begin');
+    try {
+      if (b.name !== undefined) { const n = str(b.name, 60); if (!n) throw E('Name cannot be empty'); if (n !== t.name) { R('update users set name=? where id=?', n, t.id); act(u, 'updated teacher details', `${t.username}: name changed`, t.inst); } }
+      if (b.username !== undefined) { const un = str(b.username, 30).toLowerCase();
+        if (un !== t.username) { if (!UN_RE.test(un) || un === 'admin') throw E('Username: 3-30 letters/numbers/._- (and not "admin")'); if (G('select 1 x from users where username=? and id<>?', un, t.id)) throw E('That username is already taken');
+          R('update users set username=? where id=?', un, t.id); act(u, 'changed username', `${t.username} to ${un}`, t.inst); kill = true; } }
+      if (b.password) { const p = String(b.password); if (p.length < 6) throw E('Password must be at least 6 characters'); if (p.length > 200) throw E('Password is too long');
+        const h = hashPw(p.trim()); R('update users set salt=?,hash=? where id=?', h.salt, h.hash, t.id); act(u, 'reset password', t.username, t.inst); kill = true; }
+      if (b.active !== undefined) { const on = b.active ? 1 : 0;
+        if (on !== (t.active ? 1 : 0)) {
+          if (on && t.role === 'staff' && t.sec) { const o = rivals(t.inst, t.sec, t.id); if (o.length && !b.replace) throw E(`${secName(t.sec)} now has another active class teacher (${whoIs(o)}). Move this teacher to another class first.`, 409);
+            for (const x of o) { R('update users set sec=null where id=?', x.id); act(u, 'unassigned teacher', `${x.username} from ${secName(t.sec)} (replaced by ${t.username})`, t.inst); } }
+          R('update users set active=? where id=?', on, t.id); act(u, on ? 'enabled account' : 'disabled account', t.username, t.inst); } }
+      if (b.sec !== undefined) { const target = b.sec === null || b.sec === '' || b.sec === 0 ? null : +b.sec; if (target !== null && !Number.isInteger(target)) throw E('Class not found', 404); placeTeacher(u, fresh(), target, !!b.replace); }
+      db.exec('commit');
+    } catch (e) { db.exec('rollback'); throw e; }
+    if (kill) killUser(t.id); return { ok: 1 }; }],
+  ['DELETE', /^\/api\/users\/(\d+)$/, (m, _, __, u) => { needAdm(u); const t = teacherFor(u, m[1]); R('delete from users where id=?', t.id); killUser(t.id); act(u, 'deleted account', `${t.username} (${t.role}${t.sec ? ', was in ' + secName(t.sec) : ''})`, t.inst); return { ok: 1 }; }],
+  // principal management dashboard: every class with its teacher(s), every teacher with their class, in one call (head and administrator only)
+  ['GET', /^\/api\/mgmt$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst || u.inst);
+    const secs = Q(`select s.*,(select count(*) from stu where sec=s.id) n from sec s where inst=?`, i.id).map(s => ({ id: s.id, name: s.name, section: s.section || '', label: secLabel(s), students: s.n })).sort(bySec);
+    const T = Q(`select id,username,name,active,last_login,sec from users where inst=? and role='staff' order by name collate nocase,username`, i.id).map(t => ({ ...t, active: !!t.active, name: t.name || t.username }));
+    const lab = Object.fromEntries(secs.map(s => [s.id, s]));
+    return { classes: secs.map(s => ({ ...s, teachers: T.filter(t => t.sec === s.id) })), teachers: T.map(t => ({ ...t, sec: lab[t.sec] ? t.sec : null, sec_label: lab[t.sec]?.label || null, students: lab[t.sec]?.students || 0 })),
+      heads: Q(`select id,username,name,active,last_login from users where inst=? and role='head' order by id`, i.id).map(h => ({ ...h, active: !!h.active })) }; }],
+
   ['GET', /^\/api\/activity$/, (_, __, q, u) => { const lim = Math.min(300, +q.limit || 100);
     if (u.role === 'super' && !q.inst) return Q('select a.*,(select name from inst where id=a.inst) inst_name from activity a order by id desc limit ?', lim);
     needAdm(u); const i = instFor(u, q.inst || u.inst); return Q('select a.*,(select name from inst where id=a.inst) inst_name from activity a where inst=? order by id desc limit ?', i.id, lim); }],
@@ -244,7 +288,7 @@ const routes = [
     const mine = staff ? G('select * from sec where id=? and inst=?', +u.sec || 0, i.id) : null, counts = Object.fromEntries(Q('select sec,count(*) c from stu where inst=? group by sec', i.id).map(r => [r.sec, r.c]));
     const groups = (staff ? (mine ? [mine] : []) : Q('select * from sec where inst=?', i.id)).map(s => ({ id: s.id, name: s.name, section: s.section || '', label: secLabel(s), n: counts[s.id] || 0 })).sort(bySec);
     const limit = [25, 50, 100].includes(+q.limit) ? +q.limit : 50, none = { rows: [], total: 0, page: 1, pages: 1, limit, groups };
-    if (staff && !mine) return none;
+    if (staff && !mine) { if (q.sec) throw E('This class belongs to another teacher', 403); return none; }
     const w = ['s.inst=?'], a = [i.id], search = str(q.q, 100); let rank = '', ra = [];
     if (staff) { w.push('s.sec=?'); a.push(mine.id); }
     if (search) { // search covers the whole visible scope: name, admission no., parent/guardian name, parent phone (and the alternate phone)
