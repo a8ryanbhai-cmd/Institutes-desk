@@ -19,6 +19,8 @@ create table if not exists sent(key text primary key);
 create table if not exists users(id integer primary key,username text unique,name text,role text,inst integer,sec integer,salt text,hash text,active integer default 1,last_login text);
 create table if not exists activity(id integer primary key,ts text,uname text,role text,inst integer,action text,detail text);`);
 try { db.exec('alter table inst add column active integer default 1'); } catch {}
+// Phase 2: per-institute display name, banner image file and contact profile. Each lives on that institute's own row.
+for (const c of ["display_name text default ''", "banner text default ''", "profile text default '{}'"]) try { db.exec('alter table inst add column ' + c); } catch {}
 db.exec(`create table if not exists admin(id integer primary key check(id=1),username text,salt text,hash text,updated text);
 create table if not exists col(id integer primary key,inst integer,name text,type text,opts text default '');`);
 try { db.exec("alter table stu add column extra text default '{}'"); } catch {}
@@ -55,7 +57,19 @@ const needSuper = u => { if (u.role !== 'super') throw E('Administrator only', 4
 const instFor = (u, id) => { id = +id; if (u.role !== 'super' && u.inst !== id) throw E('Not allowed', 403); const i = G('select * from inst where id=?', id); if (!i) throw E('Institute not found', 404); return i; };
 const secFor = (u, id) => { const s = G('select * from sec where id=?', +id); if (!s) throw E('Class not found', 404); instFor(u, s.inst); if (u.role === 'staff' && u.sec !== s.id) throw E('This class belongs to another teacher', 403); return s; };
 const stuFor = (u, id) => { const s = G('select * from stu where id=?', +id); if (!s) throw E('Student not found', 404); secFor(u, s.sec); return s; };
-const pub = i => ({ id: i.id, name: i.name, type: i.type, active: i.active !== 0, wa_id: i.wa_id, has_token: !!i.wa_token, cfg: cfgOf(i) });
+const bannerUrl = i => (i.banner ? '/files/' + i.banner : '');
+const pub = i => ({ id: i.id, name: i.name, type: i.type, active: i.active !== 0, wa_id: i.wa_id, has_token: !!i.wa_token, cfg: cfgOf(i), display_name: i.display_name || '', banner: bannerUrl(i) });
+// contact profile + internal notes: only ever returned by administrator routes (never by pub())
+const PROF = { contact: 80, phone: 20, email: 80, address: 300, notes: 600 };
+const profOf = i => { let p = {}; try { p = JSON.parse(i.profile || '{}'); } catch {} return Object.fromEntries(Object.entries(PROF).map(([k, n]) => [k, str(p[k], n)])); };
+const cleanProfile = (b, old = {}) => { const out = { ...old }; for (const [k, n] of Object.entries(PROF)) if (b && b[k] !== undefined) out[k] = str(b[k], n);
+  if (out.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(out.email)) throw E('Enter a valid email address'); if (out.phone && !/^[\d\s+()-]{7,20}$/.test(out.phone)) throw E('Enter a valid phone number'); return out; };
+const okColor = c => /^#[0-9a-f]{6}$/i.test(String(c || ''));
+const ADM_SQL = `select i.*,(select count(*) from stu where inst=i.id) students,(select count(*) from sec where inst=i.id) sections,(select count(*) from users where inst=i.id) accounts,(select count(*) from users where inst=i.id and active=1) accounts_on,(select max(ts) from activity where inst=i.id) last from inst i`;
+const admRow = i => ({ ...pub(i), profile: profOf(i), students: i.students, sections: i.sections, accounts: i.accounts, accounts_on: i.accounts_on, last: i.last });
+// banner images: content is sniffed (not trusted by file name) and each file is named after its own institute
+const sniff = b => b.length < 16 ? null : (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) ? '.jpg' : b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) ? '.png' : (b.subarray(0, 4).toString('latin1') === 'RIFF' && b.subarray(8, 12).toString('latin1') === 'WEBP') ? '.webp' : null;
+const dropBanner = i => { if (i.banner && i.banner.startsWith(`banner-${i.id}-`)) try { fs.unlinkSync(path.join(UP, path.basename(i.banner))); } catch {} };
 const validUser = (un, pw) => { if (!/^[a-z0-9._-]{3,30}$/.test(un) || un === 'admin') throw E('Username: 3-30 letters/numbers/._- (and not "admin")'); if (String(pw).length < 6) throw E('Password must be at least 6 characters'); if (G('select 1 x from users where username=?', un)) throw E('That username is already taken'); };
 
 // ---------- WhatsApp (each institute sends from its OWN number). No token or DRY_RUN=1 -> only logged. ----------
@@ -128,12 +142,27 @@ const routes = [
   ['GET', /^\/api\/inst$/, (_, __, ___, u) => (u.role === 'super' ? Q('select * from inst order by id') : Q('select * from inst where id=?', u.inst)).map(pub)],
   ['GET', /^\/api\/overview$/, (_, __, ___, u) => { needSuper(u); const d = today(), c = (s, ...a) => G(s, ...a).c;
     return { totals: { institutes: c('select count(*) c from inst'), accounts: c('select count(*) c from users'), students: c('select count(*) c from stu'), activityToday: c('select count(*) c from activity where ts>=?', d), messagesToday: c('select count(*) c from log where ts>=?', d) },
-      list: Q(`select i.*,(select count(*) from stu where inst=i.id) students,(select count(*) from sec where inst=i.id) sections,(select count(*) from users where inst=i.id) accounts,(select max(ts) from activity where inst=i.id) last from inst i order by id`)
-        .map(i => ({ ...pub(i), students: i.students, sections: i.sections, accounts: i.accounts, last: i.last })) }; }],
+      list: Q(ADM_SQL + ' order by i.id').map(admRow) }; }],
   ['POST', /^\/api\/inst$/, (_, b, __, u) => { needSuper(u); const name = str(b.name, 80), un = str(b.username, 30).toLowerCase(); if (!name) throw E('Institute name is required'); validUser(un, b.password);
-    const id = Number(R('insert into inst(name,type) values(?,?)', name, b.type === 'schl' ? 'schl' : 'cc').lastInsertRowid), h = hashPw(String(b.password).trim());
-    R('insert into users(username,name,role,inst,salt,hash) values(?,?,?,?,?,?)', un, str(b.head_name, 60) || (b.type === 'schl' ? 'Principal' : 'Director'), 'head', id, h.salt, h.hash);
+    const prof = JSON.stringify(cleanProfile(b.profile)), disp = str(b.display_name, 80), cfg = JSON.stringify(okColor(b.color) ? { color: b.color } : {}), h = hashPw(String(b.password).trim()); let id;
+    db.exec('begin'); try { id = Number(R('insert into inst(name,type,display_name,profile,cfg) values(?,?,?,?,?)', name, b.type === 'schl' ? 'schl' : 'cc', disp, prof, cfg).lastInsertRowid);
+      R('insert into users(username,name,role,inst,salt,hash) values(?,?,?,?,?,?)', un, str(b.head_name, 60) || (b.type === 'schl' ? 'Principal' : 'Director'), 'head', id, h.salt, h.hash); db.exec('commit'); } catch (e) { db.exec('rollback'); throw e; }
     act(u, 'created institute', `${name} (login: ${un})`, id); return { id }; }],
+  // administrator-only: one institute's full record, editable details, branding (custom name, colour, banner image)
+  ['GET', /^\/api\/admin\/inst\/(\d+)$/, (m, _, __, u) => { needSuper(u); instFor(u, m[1]); return admRow(G(ADM_SQL + ' where i.id=?', +m[1])); }],
+  ['PUT', /^\/api\/admin\/inst\/(\d+)$/, (m, b, __, u) => { needSuper(u); const i = instFor(u, m[1]), f = {};
+    if (b.name !== undefined) { const n = str(b.name, 80); if (!n) throw E('Institute name is required'); f.name = n; }
+    if (b.type !== undefined) f.type = b.type === 'schl' ? 'schl' : 'cc';
+    if (b.display_name !== undefined) f.display_name = str(b.display_name, 80);
+    if (b.profile !== undefined) f.profile = JSON.stringify(cleanProfile(b.profile, profOf(i)));
+    if (b.color !== undefined) { if (!okColor(b.color)) throw E('Choose a valid colour'); let raw = {}; try { raw = JSON.parse(i.cfg || '{}'); } catch {} raw.color = b.color; f.cfg = JSON.stringify(raw); }
+    const ks = Object.keys(f); if (!ks.length) throw E('Nothing to update');
+    R(`update inst set ${ks.map(k => k + '=?').join(',')} where id=?`, ...ks.map(k => f[k]), i.id); act(u, 'updated institute', ks.join(', '), i.id); return admRow(G(ADM_SQL + ' where i.id=?', i.id)); }],
+  ['POST', /^\/api\/admin\/inst\/(\d+)\/banner$/, (m, b, __, u) => { needSuper(u); const i = instFor(u, m[1]), buf = Buffer.from(String(b.data || '').replace(/^data:[^,]*,/, ''), 'base64');
+    if (!buf.length) throw E('Choose an image first'); if (buf.length > 4e6) throw E('Image must be under 4 MB'); const ext = sniff(buf); if (!ext) throw E('Only JPG, PNG or WebP images are allowed');
+    const fn = `banner-${i.id}-${crypto.randomBytes(8).toString('hex')}${ext}`; fs.writeFileSync(path.join(UP, fn), buf); R('update inst set banner=? where id=?', fn, i.id); dropBanner(i);
+    act(u, 'changed banner', '', i.id); return { banner: '/files/' + fn }; }],
+  ['DELETE', /^\/api\/admin\/inst\/(\d+)\/banner$/, (m, _, __, u) => { needSuper(u); const i = instFor(u, m[1]); R("update inst set banner='' where id=?", i.id); dropBanner(i); act(u, 'removed banner', '', i.id); return { ok: 1 }; }],
   ['PUT', /^\/api\/inst\/(\d+)$/, (m, b, __, u) => { needAdm(u); const i = instFor(u, m[1]), c = b.cfg || {}, old = cfgOf(i), cfg = { color: /^#[0-9a-f]{6}$/i.test(c.color) ? c.color : old.color, feeDay: Math.min(28, Math.max(1, +c.feeDay || old.feeDay)), lang: str(c.lang, 10) || old.lang, tpl: { ...old.tpl } };
     for (const k of Object.keys(DEF.tpl)) if (c.tpl?.[k]) cfg.tpl[k] = str(c.tpl[k], 60);
     const name = u.role === 'super' ? str(b.name, 80) || i.name : i.name, type = u.role === 'super' ? (b.type === 'schl' ? 'schl' : 'cc') : i.type;
@@ -141,7 +170,7 @@ const routes = [
   ['POST', /^\/api\/inst\/(\d+)\/active$/, (m, b, __, u) => { needSuper(u); const i = instFor(u, m[1]); R('update inst set active=? where id=?', b.active ? 1 : 0, i.id); act(u, b.active ? 'activated institute' : 'suspended institute', i.name, i.id); return { ok: 1 }; }],
   ['DELETE', /^\/api\/inst\/(\d+)$/, (m, _, __, u) => { needSuper(u); const i = instFor(u, m[1]);
     R('delete from att where stu in (select id from stu where inst=?)', i.id); R('delete from fee where stu in (select id from stu where inst=?)', i.id);
-    for (const t of ['stu', 'sec', 'users', 'log']) R(`delete from ${t} where inst=?`, i.id); R('delete from inst where id=?', i.id); act(u, 'deleted institute', i.name, null); return { ok: 1 }; }],
+    for (const t of ['stu', 'sec', 'users', 'log', 'col']) R(`delete from ${t} where inst=?`, i.id); R('delete from inst where id=?', i.id); dropBanner(i); act(u, 'deleted institute', i.name, null); return { ok: 1 }; }],
 
   // accounts (principal manages class teachers; admin manages everything)
   ['GET', /^\/api\/users$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst); return Q(`select u.id,u.username,u.name,u.role,u.sec,u.active,u.last_login,(select name from sec where id=u.sec) sec_name from users u where u.inst=? order by u.role,u.id`, i.id); }],
@@ -233,7 +262,7 @@ const routes = [
     return { csv: rows.length ? [Object.keys(rows[0]).join(','), ...rows.map(r => Object.values(r).map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))].join('\n') : '' }; }],
 ];
 
-const MIME = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+const MIME = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
 const readBody = req => new Promise((res, rej) => { let n = 0; const c = []; req.on('data', d => { n += d.length; if (n > 12e6) { rej(E('Request too large', 413)); req.destroy(); } else c.push(d); });
   req.on('end', () => { try { res(c.length ? JSON.parse(Buffer.concat(c).toString()) : {}); } catch { rej(E('Invalid request')); } }); req.on('error', rej); });
 http.createServer(async (req, res) => {
@@ -245,7 +274,7 @@ http.createServer(async (req, res) => {
     if (u.pathname === '/' || u.pathname === '/admin') { const html = fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f)), 'utf8').replaceAll('%BASE%', BASE); // %BASE% = BASE_URL, used for canonical + social preview links
       res.writeHead(200, { ...H, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...(u.pathname === '/admin' ? { 'X-Robots-Tag': 'noindex, nofollow' } : {}) }); return res.end(html); }
     if (u.pathname.startsWith('/files/')) { const f = path.join(UP, path.basename(u.pathname)); if (!fs.existsSync(f)) return send(404, {});
-      res.writeHead(200, { ...H, 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream' }); return res.end(fs.readFileSync(f)); }
+      res.writeHead(200, { ...H, 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream', ...(path.basename(f).startsWith('banner-') ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {}) }); return res.end(fs.readFileSync(f)); }
     for (const [method, re, fn, open] of routes) {
       const m = u.pathname.match(re); if (method !== req.method || !m) continue;
       let user = null; if (!open) { user = authUser((req.headers.authorization || '').slice(7)); if (!user) return send(401, { error: 'Please sign in again' }); }
