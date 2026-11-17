@@ -25,6 +25,19 @@ db.exec(`create table if not exists admin(id integer primary key check(id=1),use
 create table if not exists col(id integer primary key,inst integer,name text,type text,opts text default '');`);
 try { db.exec("alter table stu add column extra text default '{}'"); } catch {}
 const Q = (s, ...a) => db.prepare(s).all(...a), G = (s, ...a) => db.prepare(s).get(...a), R = (s, ...a) => db.prepare(s).run(...a);
+
+// Phase 3: a class record (sec) = class name (required) + section (optional); students link to it by id, so attendance, fees and teacher
+// assignments keep working. All changes are additive: existing rows are kept and only get new, empty columns.
+try { db.exec("alter table sec add column section text default ''"); } catch {}
+for (const c of ["adm_no text default ''", "parent text default ''", "relation text default ''", "gender text default ''", "dob text default ''", "adm_date text default ''", "address text default ''", "phone2 text default ''"]) try { db.exec('alter table stu add column ' + c); } catch {}
+const genAdm = (inst, id) => { const base = 'ADM-' + String(id).padStart(5, '0'); let a = base, n = 1; while (G('select 1 x from stu where inst=? and lower(adm_no)=lower(?)', inst, a)) a = `${base}-${++n}`; return a; };
+for (const r of Q("select id,inst from stu where coalesce(adm_no,'')=''")) R('update stu set adm_no=? where id=?', genAdm(r.inst, r.id), r.id); // older students get an admission number so they can be searched by it
+for (const x of ['create index if not exists sec_inst on sec(inst)', 'create index if not exists stu_sec on stu(sec)', 'create index if not exists stu_inst_name on stu(inst, lower(name))',
+  "create unique index if not exists stu_adm_uq on stu(inst, lower(adm_no)) where adm_no<>''"]) try { db.exec(x); } catch (e) { console.error('index', e.message); }
+const secLabel = c => (c.section ? `${c.name} - ${c.section}` : c.name);
+const natCmp = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
+const bySec = (a, b) => natCmp.compare(a.name, b.name) || natCmp.compare(a.section || '', b.section || '');
+const secTaken = (inst, name, section, except = 0) => G("select 1 x from sec where inst=? and lower(name)=lower(?) and lower(coalesce(section,''))=lower(?) and id<>?", inst, name, section, except);
 const E = (m, status = 400) => Object.assign(new Error(m), { status });
 const str = (v, n) => String(v ?? '').trim().slice(0, n);
 const DEF = { color: '#356AE6', feeDay: 15, lang: 'en', tpl: { absent: 'absent_alert', paid: 'fee_received', due: 'fee_due', ann: 'announcement', annImg: 'announcement_image', annDoc: 'announcement_document' } };
@@ -103,7 +116,27 @@ const queue = fn => { fn().catch(e => console.error('queue', e)); };
 const colsOf = inst => Q('select * from col where inst=? order by id', inst);
 const colFor = (u, id) => { const c = G('select * from col where id=?', +id); if (!c) throw E('Column not found', 404); instFor(u, c.inst); return c; };
 const optsOf = v => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[\n,]/)).map(x => str(x, 40).replace(/\|/g, '')).filter(Boolean))].slice(0, 20).join('|');
-const cleanBase = b => { const name = str(b.name, 80), phone = norm(b.phone || ''), roll = str(b.roll, 10); if (!name) throw E('Name is required'); if (phone.length < 10 || phone.length > 15) throw E(`Enter a valid parent number for ${name}`); return { name, phone, roll }; };
+const ADM_RE = /^[A-Za-z0-9][A-Za-z0-9\-\/._ ]{0,29}$/, phoneOk = p => p.length >= 10 && p.length <= 15;
+const cleanStu = b => {
+  const name = str(b.name, 80); if (!name) throw E('Student name is required');
+  const parent = str(b.parent, 80); if (!parent) throw E(`Parent or guardian name is required for ${name}`);
+  const phone = norm(b.phone || ''); if (!phoneOk(phone)) throw E(`Enter a valid parent contact number for ${name}`);
+  const p2 = String(b.phone2 || '').trim(), phone2 = p2 ? norm(p2) : ''; if (phone2 && !phoneOk(phone2)) throw E(`Enter a valid alternate number for ${name}`);
+  const gender = str(b.gender, 10); if (!['', 'Male', 'Female', 'Other'].includes(gender)) throw E('Choose a valid gender');
+  const dob = str(b.dob, 10), adm_date = str(b.adm_date, 10);
+  if (dob && (!isDay(dob) || dob > today())) throw E('Date of birth must be a valid date in the past');
+  if (adm_date && !isDay(adm_date)) throw E('Admission date must be a valid date');
+  const adm_no = str(b.adm_no, 30); if (adm_no && !ADM_RE.test(adm_no)) throw E('Admission number can use letters, numbers and - / . _ only');
+  return { name, parent, phone, phone2, gender, dob, adm_date, adm_no, relation: str(b.relation, 20), roll: str(b.roll, 10), address: str(b.address, 300) };
+};
+const admTaken = (inst, adm, except = 0) => adm && G('select 1 x from stu where inst=? and lower(adm_no)=lower(?) and id<>?', inst, adm, except);
+const insertStu = (s, x, ex) => {
+  const id = Number(R('insert into stu(inst,sec,name,roll,phone,extra,adm_no,parent,relation,gender,dob,adm_date,address,phone2) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)', s.inst, s.id, x.name, x.roll, x.phone, ex, x.adm_no, x.parent, x.relation, x.gender, x.dob, x.adm_date, x.address, x.phone2).lastInsertRowid);
+  if (!x.adm_no) R('update stu set adm_no=? where id=?', genAdm(s.inst, id), id); return id;
+};
+const STU_SQL = 'select s.id,s.sec,s.adm_no,s.name,s.roll,s.parent,s.relation,s.phone,s.phone2,s.gender,s.dob,s.adm_date,s.address,s.extra,c.name cls,coalesce(c.section,\'\') section';
+const stuOut = r => { let extra = {}; try { extra = JSON.parse(r.extra || '{}'); } catch {} return { ...r, extra, label: secLabel({ name: r.cls, section: r.section }) }; };
+const LESC = " escape '\\'";
 const cleanExtra = (inst, ex) => { const out = {}; for (const c of colsOf(inst)) { const v = str((ex || {})[c.id], 200); if (v === '') continue;
   if (c.type === 'number' && !/^-?\d+(\.\d+)?$/.test(v)) throw E(`${c.name} must be a number`); if (c.type === 'date' && !isDay(v)) throw E(`${c.name} must be a date`);
   if (c.type === 'dropdown' && !c.opts.split('|').includes(v)) throw E(`${c.name}: choose one of the listed options`); out[c.id] = v; } return JSON.stringify(out); };
@@ -173,7 +206,7 @@ const routes = [
     for (const t of ['stu', 'sec', 'users', 'log', 'col']) R(`delete from ${t} where inst=?`, i.id); R('delete from inst where id=?', i.id); dropBanner(i); act(u, 'deleted institute', i.name, null); return { ok: 1 }; }],
 
   // accounts (principal manages class teachers; admin manages everything)
-  ['GET', /^\/api\/users$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst); return Q(`select u.id,u.username,u.name,u.role,u.sec,u.active,u.last_login,(select name from sec where id=u.sec) sec_name from users u where u.inst=? order by u.role,u.id`, i.id); }],
+  ['GET', /^\/api\/users$/, (_, __, q, u) => { needAdm(u); const i = instFor(u, q.inst); return Q(`select u.id,u.username,u.name,u.role,u.sec,u.active,u.last_login,(select name||case when coalesce(section,'')<>'' then ' - '||section else '' end from sec where id=u.sec) sec_name from users u where u.inst=? order by u.role,u.id`, i.id); }],
   ['POST', /^\/api\/users$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), un = str(b.username, 30).toLowerCase(); validUser(un, b.password);
     const role = u.role === 'super' && b.role === 'head' ? 'head' : 'staff'; let sec = null;
     if (role === 'staff') { const s = G('select * from sec where id=? and inst=?', +b.sec, i.id); if (!s) throw E('Choose a class for this teacher'); sec = s.id; }
@@ -190,33 +223,74 @@ const routes = [
     if (u.role === 'super' && !q.inst) return Q('select a.*,(select name from inst where id=a.inst) inst_name from activity a order by id desc limit ?', lim);
     needAdm(u); const i = instFor(u, q.inst || u.inst); return Q('select a.*,(select name from inst where id=a.inst) inst_name from activity a where inst=? order by id desc limit ?', i.id, lim); }],
 
-  // classes / batches: every role can SEE the list, only the assigned teacher (or head/admin) can open one
+  // classes / batches: a class = name (required) + section (optional). Every role can SEE the list, only the assigned teacher (or head/admin) can open one
   ['GET', /^\/api\/sec$/, (_, __, q, u) => { const i = instFor(u, q.inst);
-    return Q(`select s.id,s.name,(select count(*) from stu where sec=s.id) n,(select name from users where sec=s.id and role='staff' and active=1 limit 1) teacher from sec s where inst=? order by name`, i.id).map(s => ({ ...s, locked: u.role === 'staff' && u.sec !== s.id })); }],
-  ['POST', /^\/api\/sec$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), name = str(b.name, 60); if (!name) throw E('Name is required'); const id = Number(R('insert into sec(inst,name) values(?,?)', i.id, name).lastInsertRowid); act(u, 'created class', name, i.id); return { id }; }],
+    return Q(`select s.id,s.name,coalesce(s.section,'') section,(select count(*) from stu where sec=s.id) n,(select name from users where sec=s.id and role='staff' and active=1 limit 1) teacher from sec s where inst=?`, i.id)
+      .map(s => ({ ...s, label: secLabel(s), locked: u.role === 'staff' && u.sec !== s.id })).sort(bySec); }],
+  ['POST', /^\/api\/sec$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), name = str(b.name, 60); if (!name) throw E('Class name is required');
+    let secs = [...new Set((Array.isArray(b.sections) ? b.sections : [b.section]).map(x => str(x, 20)).filter(Boolean))]; if (!secs.length) secs = [''];
+    for (const x of secs) if (secTaken(i.id, name, x)) throw E(`${secLabel({ name, section: x })} already exists`);
+    const ids = []; db.exec('begin'); try { for (const x of secs) ids.push(Number(R('insert into sec(inst,name,section) values(?,?,?)', i.id, name, x).lastInsertRowid)); db.exec('commit'); } catch (e) { db.exec('rollback'); throw e; }
+    act(u, 'created class', secs.map(x => secLabel({ name, section: x })).join(', '), i.id); return { id: ids[0], ids }; }],
+  ['PUT', /^\/api\/sec\/(\d+)$/, (m, b, __, u) => { needAdm(u); const s = secFor(u, m[1]); if (b.name !== undefined && !str(b.name, 60)) throw E('Class name is required');
+    const name = b.name === undefined ? s.name : str(b.name, 60), section = b.section === undefined ? (s.section || '') : str(b.section, 20);
+    if (secTaken(s.inst, name, section, s.id)) throw E(`${secLabel({ name, section })} already exists`);
+    R('update sec set name=?,section=? where id=?', name, section, s.id); act(u, 'edited class', `${secLabel(s)} to ${secLabel({ name, section })}`, s.inst); return { ok: 1 }; }],
   ['DELETE', /^\/api\/sec\/(\d+)$/, (m, _, __, u) => { needAdm(u); const s = secFor(u, m[1]);
-    R('delete from att where stu in (select id from stu where sec=?)', s.id); R('delete from fee where stu in (select id from stu where sec=?)', s.id); R('delete from stu where sec=?', s.id); R('update users set sec=null where sec=?', s.id); R('delete from sec where id=?', s.id); act(u, 'deleted class', s.name, s.inst); return { ok: 1 }; }],
+    R('delete from att where stu in (select id from stu where sec=?)', s.id); R('delete from fee where stu in (select id from stu where sec=?)', s.id); R('delete from stu where sec=?', s.id); R('update users set sec=null where sec=?', s.id); R('delete from sec where id=?', s.id); act(u, 'deleted class', secLabel(s), s.inst); return { ok: 1 }; }],
 
-  // students
+  // students. Scope is enforced here on the server: teachers are pinned to their own class + section, heads to their institute, the administrator to the institute asked for.
+  ['GET', /^\/api\/students$/, (_, __, q, u) => { const staff = u.role === 'staff', i = instFor(u, staff ? u.inst : (q.inst || u.inst));
+    const mine = staff ? G('select * from sec where id=? and inst=?', +u.sec || 0, i.id) : null, counts = Object.fromEntries(Q('select sec,count(*) c from stu where inst=? group by sec', i.id).map(r => [r.sec, r.c]));
+    const groups = (staff ? (mine ? [mine] : []) : Q('select * from sec where inst=?', i.id)).map(s => ({ id: s.id, name: s.name, section: s.section || '', label: secLabel(s), n: counts[s.id] || 0 })).sort(bySec);
+    const limit = [25, 50, 100].includes(+q.limit) ? +q.limit : 50, none = { rows: [], total: 0, page: 1, pages: 1, limit, groups };
+    if (staff && !mine) return none;
+    const w = ['s.inst=?'], a = [i.id], search = str(q.q, 100); let rank = '', ra = [];
+    if (staff) { w.push('s.sec=?'); a.push(mine.id); }
+    if (search) { // search covers the whole visible scope: name, admission no., parent/guardian name, parent phone (and the alternate phone)
+      const lk = t => '%' + t.replace(/[\\%_]/g, m => '\\' + m) + '%';
+      if (/^[\d\s+()-]+$/.test(search) && search.replace(/\D/g, '').length >= 3) { let d = search.replace(/\D/g, ''); if (d.length === 11 && d[0] === '0') d = d.slice(1);
+        w.push(`(s.phone like ?${LESC} or s.phone2 like ?${LESC} or s.adm_no like ?${LESC})`); a.push(lk(d), lk(d), lk(search)); }
+      else for (const t of search.split(/\s+/).slice(0, 6)) { const d = t.replace(/\D/g, ''), p = [`s.name like ?${LESC}`, `s.adm_no like ?${LESC}`, `s.parent like ?${LESC}`], v = [lk(t), lk(t), lk(t)];
+        if (d.length >= 3) { p.push(`s.phone like ?${LESC}`, `s.phone2 like ?${LESC}`); v.push(lk(d), lk(d)); } w.push('(' + p.join(' or ') + ')'); a.push(...v); }
+      rank = `(lower(s.adm_no)=lower(?)) desc,(lower(s.name)=lower(?)) desc,(s.name like ?${LESC}) desc,lower(s.name),`; ra = [search, search, lk(search).slice(1)];
+    } else if (q.sec) { const s = secFor(u, q.sec); if (s.inst !== i.id) throw E('Class not found', 404); w.push('s.sec=?'); a.push(s.id); }
+    else if (q.class) { w.push('lower(c.name)=lower(?)'); a.push(str(q.class, 60)); }
+    const from = 'from stu s join sec c on c.id=s.sec where ' + w.join(' and '), total = G(`select count(*) c ${from}`, ...a).c, pages = Math.max(1, Math.ceil(total / limit)), page = Math.min(pages, Math.max(1, +q.page || 1));
+    if (!total) return { ...none, page: 1 };
+    const ord = groups.length ? `case s.sec ${groups.map((g, k) => `when ${g.id} then ${k}`).join(' ')} else 1000000 end` : '0';
+    const dup = `(select count(*) from stu d where d.inst=s.inst and lower(d.name)=lower(s.name)${staff ? ' and d.sec=s.sec' : ''}) dup`; // students sharing this exact name, counted only inside the caller's own scope
+    const rows = Q(`${STU_SQL},${dup} ${from} order by ${rank}${ord},cast(s.roll as integer),s.name collate nocase limit ? offset ?`, ...a, ...ra, limit, (page - 1) * limit);
+    return { rows: rows.map(stuOut), total, page, pages, limit, groups }; }],
   ['GET', /^\/api\/stu$/, (_, __, q, u) => Q('select * from stu where sec=? order by cast(roll as integer),name', secFor(u, q.sec).id).map(r => ({ ...r, extra: JSON.parse(r.extra || '{}') }))],
   ['GET', /^\/api\/cols$/, (_, __, q, u) => colsOf(instFor(u, q.inst).id).map(c => ({ ...c, opts: c.opts ? c.opts.split('|') : [] }))],
-  ['POST', /^\/api\/cols$/, (_, b, __, u) => { const i = instFor(u, b.inst), name = str(b.name, 40), type = ['text', 'date', 'number', 'dropdown'].includes(b.type) ? b.type : 'text', all = colsOf(i.id);
+  ['POST', /^\/api\/cols$/, (_, b, __, u) => { needAdm(u); const i = instFor(u, b.inst), name = str(b.name, 40), type = ['text', 'date', 'number', 'dropdown'].includes(b.type) ? b.type : 'text', all = colsOf(i.id);
     if (!name) throw E('Column name is required'); if (all.length >= 30) throw E('Maximum 30 extra columns'); if (all.some(c => c.name.toLowerCase() === name.toLowerCase())) throw E('That column already exists');
     const opts = type === 'dropdown' ? optsOf(b.opts) : ''; if (type === 'dropdown' && !opts) throw E('Add at least one option');
     const id = Number(R('insert into col(inst,name,type,opts) values(?,?,?,?)', i.id, name, type, opts).lastInsertRowid); act(u, 'added column', name, i.id); return { id }; }],
-  ['PUT', /^\/api\/cols\/(\d+)$/, (m, b, __, u) => { const c = colFor(u, m[1]), name = str(b.name, 40) || c.name, opts = c.type === 'dropdown' ? (optsOf(b.opts) || c.opts) : '';
+  ['PUT', /^\/api\/cols\/(\d+)$/, (m, b, __, u) => { needAdm(u); const c = colFor(u, m[1]), name = str(b.name, 40) || c.name, opts = c.type === 'dropdown' ? (optsOf(b.opts) || c.opts) : '';
     R('update col set name=?,opts=? where id=?', name, opts, c.id); act(u, 'edited column', name, c.inst); return { ok: 1 }; }],
   ['DELETE', /^\/api\/cols\/(\d+)$/, (m, _, __, u) => { needAdm(u); const c = colFor(u, m[1]); R('delete from col where id=?', c.id); act(u, 'deleted column', c.name, c.inst); return { ok: 1 }; }],
-  ['POST', /^\/api\/stu$/, (_, b, __, u) => { const s = secFor(u, b.sec), x = cleanBase(b), ex = cleanExtra(s.inst, b.extra);
-    const id = Number(R('insert into stu(inst,sec,name,roll,phone,extra) values(?,?,?,?,?,?)', s.inst, s.id, x.name, x.roll, x.phone, ex).lastInsertRowid); act(u, 'added student', `${x.name} to ${s.name}`, s.inst); return { id }; }],
-  ['PUT', /^\/api\/stu\/(\d+)$/, (m, b, __, u) => { const s = stuFor(u, m[1]), x = cleanBase(b), ex = cleanExtra(s.inst, b.extra);
-    R('update stu set name=?,roll=?,phone=?,extra=? where id=?', x.name, x.roll, x.phone, ex, s.id); act(u, 'edited student', x.name, s.inst); return { ok: 1 }; }],
-  ['POST', /^\/api\/stu\/bulk$/, (_, b, __, u) => { const s = secFor(u, b.sec), cols = colsOf(s.inst); let n = 0, skip = 0; // columns: Name, Number, Roll, then your extra columns (tab-separated from Excel/Sheets, or comma-separated)
-    for (const line of String(b.text).split('\n').slice(0, 500)) { if (!line.trim()) continue; const p = (line.includes('\t') ? line.split('\t') : line.split(',')).map(x => x.trim());
-      try { const x = cleanBase({ name: p[0], phone: p[1], roll: p[2] }), ex = {}; cols.forEach((c, k) => { if (p[3 + k]) ex[c.id] = p[3 + k]; });
-        R('insert into stu(inst,sec,name,roll,phone,extra) values(?,?,?,?,?,?)', s.inst, s.id, x.name, x.roll, x.phone, cleanExtra(s.inst, ex)); n++; } catch { skip++; } }
-    act(u, 'imported students', `${n} to ${s.name}`, s.inst); return { added: n, skipped: skip }; }],
-  ['DELETE', /^\/api\/stu\/(\d+)$/, (m, _, __, u) => { const s = stuFor(u, m[1]); R('delete from att where stu=?', s.id); R('delete from fee where stu=?', s.id); R('delete from stu where id=?', s.id); act(u, 'removed student', s.name, s.inst); return { ok: 1 }; }],
+  ['POST', /^\/api\/stu$/, (_, b, __, u) => { const s = secFor(u, b.sec), x = cleanStu(b), ex = cleanExtra(s.inst, b.extra); if (admTaken(s.inst, x.adm_no)) throw E('That admission number is already in use');
+    const id = insertStu(s, x, ex); act(u, 'added student', `${x.name} to ${secLabel(s)}`, s.inst); return { id, adm_no: G('select adm_no from stu where id=?', id).adm_no }; }],
+  ['PUT', /^\/api\/stu\/(\d+)$/, (m, b, __, u) => { const s = stuFor(u, m[1]), x = cleanStu(b), ex = cleanExtra(s.inst, b.extra); let to = G('select * from sec where id=?', s.sec);
+    if (b.sec && +b.sec !== s.sec) { needAdm(u); to = secFor(u, b.sec); if (to.inst !== s.inst) throw E('Class not found', 404); } // only head/admin can move a student to another class or section
+    if (x.adm_no && admTaken(s.inst, x.adm_no, s.id)) throw E('That admission number is already in use'); const adm = x.adm_no || s.adm_no || genAdm(s.inst, s.id);
+    R('update stu set sec=?,name=?,roll=?,phone=?,extra=?,adm_no=?,parent=?,relation=?,gender=?,dob=?,adm_date=?,address=?,phone2=? where id=?', to.id, x.name, x.roll, x.phone, ex, adm, x.parent, x.relation, x.gender, x.dob, x.adm_date, x.address, x.phone2, s.id);
+    act(u, 'edited student', to.id !== s.sec ? `${x.name} moved to ${secLabel(to)}` : x.name, s.inst); return { ok: 1 }; }],
+  // bulk columns: Name, Parent contact, Roll no, Admission no, Parent/guardian, Gender, Date of birth, Address, then your extra columns (tab-separated from Excel/Sheets, or comma-separated)
+  ['POST', /^\/api\/stu\/bulk$/, (_, b, __, u) => { const s = secFor(u, b.sec), cols = colsOf(s.inst), errors = [], failed = []; let n = 0, skip = 0, first = true;
+    const iso = v => { v = String(v || '').trim(); const m = v.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/); return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : v; };
+    const gen = v => { v = String(v || '').trim().toLowerCase(); return !v ? '' : v[0] === 'm' ? 'Male' : v[0] === 'f' ? 'Female' : 'Other'; };
+    const lines = String(b.text || '').split('\n'); db.exec('begin');
+    try { for (let k = 0; k < lines.length && k < 500; k++) { const line = lines[k]; if (!line.trim()) continue; const p = (line.includes('\t') ? line.split('\t') : line.split(',')).map(x => x.trim());
+        if (first) { first = false; if (!/\d{5,}/.test(p[1] || '')) continue; } // a heading row is skipped
+        try { const x = cleanStu({ name: p[0], phone: p[1], roll: p[2], adm_no: p[3], parent: p[4], gender: gen(p[5]), dob: iso(p[6]), address: p[7] }), ex = {}; cols.forEach((c, j) => { if (p[8 + j]) ex[c.id] = p[8 + j]; });
+          const exj = cleanExtra(s.inst, ex); if (admTaken(s.inst, x.adm_no)) throw E('Admission number is already in use'); insertStu(s, x, exj); n++; }
+        catch (e) { skip++; failed.push(k + 1); if (errors.length < 10) errors.push({ line: k + 1, name: p[0] || '', msg: e.message }); } }
+      db.exec('commit'); } catch (e) { db.exec('rollback'); throw e; }
+    act(u, 'imported students', `${n} to ${secLabel(s)}`, s.inst); return { added: n, skipped: skip, errors, failed }; }],
+  ['DELETE', /^\/api\/stu\/(\d+)$/, (m, _, __, u) => { needAdm(u); const s = stuFor(u, m[1]); R('delete from att where stu=?', s.id); R('delete from fee where stu=?', s.id); R('delete from stu where id=?', s.id); act(u, 'removed student', s.name, s.inst); return { ok: 1 }; }],
 
   // attendance
   ['GET', /^\/api\/att$/, (_, __, q, u) => { if (!isDay(q.day)) throw E('Invalid date'); return Q(`select s.id,s.name,s.roll,coalesce(a.status,'P') status,a.status saved from stu s left join att a on a.stu=s.id and a.day=? where s.sec=? order by cast(s.roll as integer),s.name`, q.day, secFor(u, q.sec).id); }],
@@ -225,7 +299,7 @@ const routes = [
     for (const s of Q('select * from stu where sec=?', sec.id)) { R('insert or replace into att(stu,day,status) values(?,?,?)', s.id, b.day, ab.has(s.id) ? 'A' : 'P');
       if (ab.has(s.id) && once(`abs:${s.id}:${b.day}`)) { mark(`abs:${s.id}:${b.day}`); out.push(s); } }
     queue(async () => { for (const s of out) await wa(i, s.phone, 'absent', c.tpl.absent, [s.name, fmt(b.day), i.name]); });
-    act(u, 'saved attendance', `${sec.name} ${b.day}: ${ab.size} absent`, sec.inst); return { saved: 1, alerts: out.length }; }],
+    act(u, 'saved attendance', `${secLabel(sec)} ${b.day}: ${ab.size} absent`, sec.inst); return { saved: 1, alerts: out.length }; }],
 
   // fees (teachers can view their class, only head/admin can approve)
   ['GET', /^\/api\/fee$/, (_, __, q, u) => { if (!isMonth(q.month)) throw E('Invalid month'); return Q(`select s.id,s.name,s.roll,coalesce(f.status,'pending') status,f.cleared from stu s left join fee f on f.stu=s.id and f.month=? where s.sec=? order by cast(s.roll as integer),s.name`, q.month, secFor(u, q.sec).id); }],
@@ -252,7 +326,7 @@ const routes = [
     const n = c(`select count(*) c from stu s where s.inst=?${sf}`, i.id), ab = st => c(`select count(*) c from att a join stu s on s.id=a.stu where s.inst=? and a.day=? and a.status=?${sf}`, i.id, d, st);
     const paid = c(`select count(*) c from fee f join stu s on s.id=f.stu where s.inst=? and f.month=? and f.status='cleared'${sf}`, i.id, mo);
     const only = u.role === 'staff' ? ` and s.id=${+u.sec || 0}` : '';
-    const classes = Q(`select s.id,s.name,(select name from users where sec=s.id and role='staff' and active=1 limit 1) teacher,(select count(*) from stu where sec=s.id) n,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=? and a.status='A') absent,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=?) marked from sec s where s.inst=?${only} order by s.name`, d, d, i.id);
+    const classes = Q(`select s.id,s.name,coalesce(s.section,'') section,(select name from users where sec=s.id and role='staff' and active=1 limit 1) teacher,(select count(*) from stu where sec=s.id) n,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=? and a.status='A') absent,(select count(*) from att a join stu t on t.id=a.stu where t.sec=s.id and a.day=?) marked from sec s where s.inst=?${only} order by s.name`, d, d, i.id).map(c => ({ ...c, label: secLabel(c) })).sort(bySec);
     return { classes, students: n, present: ab('P'), absent: ab('A'), paid, pending: n - paid, sections: c('select count(*) c from sec where inst=?', i.id), msgs: u.role === 'staff' ? null : c('select count(*) c from log where inst=? and ts>=?', i.id, d) }; }],
   ['GET', /^\/api\/trend$/, (_, __, q, u) => { const i = instFor(u, q.inst), sf = u.role === 'staff' ? ` and s.sec=${+u.sec || 0}` : ''; // read-only: last 14 days with attendance, for dashboard charts
     return Q(`select a.day day,sum(a.status='P') present,sum(a.status='A') absent from att a join stu s on s.id=a.stu where s.inst=?${sf} group by a.day order by a.day desc limit 14`, i.id).reverse(); }],
