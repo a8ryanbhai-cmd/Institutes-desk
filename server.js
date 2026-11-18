@@ -389,7 +389,9 @@ http.createServer(async (req, res) => {
     ...(req.headers['x-forwarded-proto'] === 'https' ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}) };
   const send = (c, d, t = 'application/json') => { res.writeHead(c, { ...H, 'Content-Type': t, 'Cache-Control': 'no-store' }); res.end(t === 'application/json' ? JSON.stringify(d) : d); };
   try {
-    if (u.pathname === '/' || u.pathname === '/admin') { const html = fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f)), 'utf8').replaceAll('%BASE%', BASE); // %BASE% = BASE_URL, used for canonical + social preview links
+    if (u.pathname === '/og-image.jpg') { const f = ['og-image.jpg', 'public/og-image.jpg'].map(x => path.join(__dirname, x)).find(x => fs.existsSync(x)); if (!f) return send(404, {});
+      res.writeHead(200, { ...H, 'Content-Type': 'image/jpeg', 'Cache-Control': 'public, max-age=86400' }); return res.end(fs.readFileSync(f)); } // link-preview image (WhatsApp, Telegram, Facebook, etc.)
+    if (u.pathname === '/' || u.pathname === '/admin') { const SITE = process.env.BASE_URL ? BASE : `${String(req.headers['x-forwarded-proto'] || 'http').split(',')[0].trim()}://${req.headers.host}`; const html = fs.readFileSync(['index.html', 'public/index.html'].map(f => path.join(__dirname, f)).find(f => fs.existsSync(f)), 'utf8').replaceAll('%BASE%', SITE); // %BASE% = BASE_URL, used for canonical + social preview links
       res.writeHead(200, { ...H, 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', ...(u.pathname === '/admin' ? { 'X-Robots-Tag': 'noindex, nofollow' } : {}) }); return res.end(html); }
     if (u.pathname.startsWith('/files/')) { const f = path.join(UP, path.basename(u.pathname)); if (!fs.existsSync(f)) return send(404, {});
       res.writeHead(200, { ...H, 'Content-Type': MIME[path.extname(f).toLowerCase()] || 'application/octet-stream', ...(path.basename(f).startsWith('banner-') ? { 'Cache-Control': 'public, max-age=31536000, immutable' } : {}) }); return res.end(fs.readFileSync(f)); }
