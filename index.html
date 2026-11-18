@@ -178,8 +178,8 @@ details>summary{cursor:pointer;font-weight:600;padding:2px 0}details[open]>summa
 tr[data-id]{cursor:pointer}
 .alert.warn{background:var(--warns);color:var(--warn);border-color:var(--warnb)}
 /* ===== Glow theme: app interior (dark navy, blue grid, corner orbs, glowing filled icons) ===== */
-:root{--glow:color-mix(in srgb,var(--ac) 38%,transparent)}
-[data-theme=dark]{--glow:color-mix(in srgb,var(--ac) 85%,transparent)}
+:root{--glow:#ffffffb3}
+[data-theme=dark]{--glow:#ffffffb3}
 .shell{position:relative;isolation:isolate}
 [data-theme=dark] .shell:before{content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;background:
 radial-gradient(circle at 0 0,#0b7cffb0 0,#0450d680 10%,#00133f66 13.6%,transparent 14%,transparent 15.4%,#2a8dff88 15.5%,#2a8dff88 15.9%,transparent 16%),
@@ -198,13 +198,16 @@ linear-gradient(#1a3c8a26 1px,transparent 1px) 0 0/56px 56px,linear-gradient(90d
 /* icons: filled (duotone) and glowing */
 svg.ic{filter:drop-shadow(0 0 3px var(--glow))}
 .sitem svg.ic,.bnav svg.ic,.mc svg.ic{color:var(--ac);filter:drop-shadow(0 0 5px var(--glow)) drop-shadow(0 0 12px var(--glow))}
-.sitem.on svg.ic,.bnav span.on svg.ic{filter:drop-shadow(0 0 6px var(--ac)) drop-shadow(0 0 15px var(--glow))}
-.sitem.on,.bnav span.on{text-shadow:0 0 14px var(--glow)}
+.sitem.on svg.ic,.bnav span.on svg.ic{filter:drop-shadow(0 0 6px var(--glow)) drop-shadow(0 0 15px var(--glow))}
+.sitem.on,.bnav span.on{text-shadow:0 0 14px color-mix(in srgb,var(--ac) 85%,transparent)}
 .side.adm .sitem svg.ic{color:#8cc4ff}
-/* every icon is outline by default and fills when tapped (or when its tab is the active one) */
-svg.ic{fill:none;transition:fill .16s ease,fill-opacity .16s ease}
-.auth svg.ic.f{fill:currentColor;fill-opacity:.32}
-.sitem.on svg.ic,.bnav span.on svg.ic,[data-t]:active svg.ic,[data-g]:active svg.ic,button:active svg.ic,a:active svg.ic,.mc:active svg.ic,.suser:active svg.ic,.chip:active svg.ic{fill:currentColor;fill-opacity:.4}
+/* icons: outline by default, SOLID filled while pressed and for the open tab (stays until another tab is opened) */
+svg.ic .s{display:none}
+.auth svg.ic.h .o{fill:currentColor;fill-opacity:.32}
+:is(.sitem.on,.bnav span.on,[data-t]:active,[data-g]:active,button:active,a:active,.mc:active,.suser:active,.chip:active) svg.ic.h .o{display:none}
+:is(.sitem.on,.bnav span.on,[data-t]:active,[data-g]:active,button:active,a:active,.mc:active,.suser:active,.chip:active) svg.ic.h .s{display:inline}
+:is(.sitem.on,.bnav span.on,[data-t]:active,[data-g]:active,button:active,a:active,.mc:active,.suser:active,.chip:active) svg.ic:not(.h){stroke-width:2.8}
+:root{--cut:#fff}[data-theme=dark]{--cut:#06143a}
 /* ===== Overlays / states ===== */
 .veil{position:fixed;inset:0;background:#0b1424a6;display:grid;place-items:center;z-index:40;animation:fade .15s ease both;padding:12px}.veil .card{max-width:420px;width:100%;margin:0;max-height:92vh;overflow:auto;animation:pop .18s ease both;box-shadow:var(--shl);background:var(--elev)}
 #toast{position:fixed;bottom:92px;left:50%;transform:translateX(-50%);background:var(--toast);color:#fff;border-radius:999px;padding:10px 22px;z-index:50;display:none;max-width:92vw;text-align:center;font-weight:500;border:1px solid var(--line)}@media(min-width:960px){#toast{bottom:28px}}
@@ -228,7 +231,28 @@ table.rt td>input,table.rt td>select{flex:1;max-width:62%;min-width:0!important}
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const I={home:'<path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',att:'<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 14l2 2 4-4"/>',fee:'<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 15h2"/>',ann:'<path d="M4 10v4h3l7 4V6L7 10zM18 9a4 4 0 0 1 0 6"/>',users:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.5 3-5.5 6.5-5.5s6.5 2 6.5 5.5M16 5a3.5 3.5 0 0 1 0 7M18 14.5c2.2.6 3.5 2.3 3.5 5"/>',more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',shield:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>',msg:'<path d="M4 5h16v11H9l-5 4z"/>',pulse:'<path d="M3 12h4l3-7 4 14 3-7h4"/>',cog:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>',key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M16 7l3 3"/>',build:'<path d="M4 21V8l8-5 8 5v13M9 21v-6h6v6"/>',menu:'<path d="M4 6h16M4 12h16M4 18h16"/>',sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/>',moon:'<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4 6.5 6.5 0 0 0 20 14.5z"/>',inbox:'<path d="M4 13l2-8h12l2 8M4 13v6h16v-6M4 13h5l1 2h4l1-2h5"/>',eye:'<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',x:'<path d="M6 6l12 12M18 6L6 18"/>',search:'<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',plus:'<path d="M12 5v14M5 12h14"/>',back:'<path d="M15 6l-6 6 6 6"/>',img:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M21 16l-5-5-8 8"/>',edit:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',copy:'<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h9"/>',check:'<path d="M5 12l5 5 9-10"/>',open:'<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>',trash:'<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>',power:'<path d="M12 3v8M6.5 6.5a8 8 0 1 0 11 0"/>',dash:'<rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="5" rx="2"/><rect x="13" y="11" width="8" height="10" rx="2"/><rect x="3" y="14" width="8" height="7" rx="2"/>'};
 const FILLED=new Set(['home','att','fee','ann','users','lock','shield','msg','cog','key','build','sun','moon','inbox','img','copy','trash','dash','edit']);
-const ic=(n,s=22)=>{const f=FILLED.has(n);return `<svg class="ic${f?' f':''}" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`};
+const SOL={
+home:'<path d="M12 2.8 2.9 10.5a1 1 0 0 0 .64 1.77H5V20a1.2 1.2 0 0 0 1.2 1.2h3.3v-5.6h5v5.6h3.3A1.2 1.2 0 0 0 19 20v-7.73h1.46a1 1 0 0 0 .64-1.77z"/>',
+att:'<path d="M7 4h2.2a2.8 2.8 0 0 1 5.6 0H17a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8.5 13.2l1.8 1.8 4.2-4.2 1.1 1.1-5.3 5.3-2.9-2.9z"/>',
+fee:'<path d="M5 5h14a2 2 0 0 1 2 2v1H3V7a2 2 0 0 1 2-2zM3 10h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM15.5 14.2h2.3v1.6h-2.3z"/>',
+ann:'<path d="M3.5 9.5A1.5 1.5 0 0 1 5 8h2.2L13 4.5a1 1 0 0 1 1.5.9v13.2a1 1 0 0 1-1.5.9L7.2 16H5a1.5 1.5 0 0 1-1.5-1.5zM17 8.6a4.3 4.3 0 0 1 0 6.8l-1-1.4a2.6 2.6 0 0 0 0-4z"/>',
+users:'<path d="M9 11.5a3.6 3.6 0 1 0 0-7.2 3.6 3.6 0 0 0 0 7.2zM2.5 20c0-3.4 2.9-5.5 6.5-5.5s6.5 2.1 6.5 5.5zM16.5 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM17 14.4c2.5.4 4.5 2 4.5 5.6h-4.3c0-2.2-.1-4-.2-5.6z"/>',
+shield:'<path d="M12 2.8l8 3v6.2c0 4.7-3.3 7.8-8 9.2-4.7-1.4-8-4.5-8-9.2V5.8zM10.9 14.6l-2.4-2.4 1-1 1.4 1.4 3.6-3.6 1 1z"/>',
+msg:'<path d="M5 4h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-8.5L6 21v-4H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM7 8h10v1.4H7zM7 11.4h6v1.4H7z"/>',
+pulse:'<rect x="3" y="3.5" width="18" height="17" rx="3"/><path d="M6 12.2h3l1.5-3.2 3 6.4 1.5-3.2H18" fill="none" stroke="var(--cut)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
+cog:'<path d="M10.6 2.8h2.8l.5 2.3 1.6.7 2-1.3 2 2-1.3 2 .7 1.6 2.3.5v2.8l-2.3.5-.7 1.6 1.3 2-2 2-2-1.3-1.6.7-.5 2.3h-2.8l-.5-2.3-1.6-.7-2 1.3-2-2 1.3-2-.7-1.6-2.3-.5v-2.8l2.3-.5.7-1.6-1.3-2 2-2 2 1.3 1.6-.7zM12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z"/>',
+key:'<path d="M8 10.5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM8 14a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/><path d="M11 12.2 19 4.2l2.4 2.4-1.8 1.8 1.4 1.4-2.2 2.2-1.4-1.4-1.6 1.6-2.2-2.2-.8.8z"/>',
+build:'<path d="M3.5 21V8.6L12 3l8.5 5.6V21h-6v-6h-5v6z"/>',
+dash:'<rect x="3" y="3" width="8" height="9" rx="1.5"/><rect x="13" y="3" width="8" height="5" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/>',
+lock:'<path d="M7 10V8a5 5 0 0 1 10 0v2h.5a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 5 19.5v-8A1.5 1.5 0 0 1 6.5 10zm2 0h6V8a3 3 0 0 0-6 0z"/>',
+sun:'<circle cx="12" cy="12" r="4.8"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M5 5l1.8 1.8M17.2 17.2 19 19M19 5l-1.8 1.8M6.8 17.2 5 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>',
+moon:'<path d="M20.5 14.2A8.6 8.6 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z"/>',
+inbox:'<path d="M4.6 5.5A1 1 0 0 1 5.5 5h13a1 1 0 0 1 .9.5L21 12v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-6zM5.2 12h4.1l1 2.2h3.4l1-2.2h4.1l-1.4-5.2H6.6z"/>',
+img:'<path d="M5 4h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM8.5 7.8a1.7 1.7 0 1 0 0 3.4 1.7 1.7 0 0 0 0-3.4zM5 18l4.5-5 3 3 3-3.5L19 18z"/>',
+edit:'<path d="M3.5 20.5v-4.2L15.8 4a1.4 1.4 0 0 1 2 0l2.2 2.2a1.4 1.4 0 0 1 0 2L7.7 20.5z"/>',
+copy:'<rect x="8.5" y="8.5" width="12" height="12" rx="2"/><path d="M5.5 15.5H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8.5a2 2 0 0 1 2 2v.5h-8a3 3 0 0 0-3 3z"/>',
+trash:'<path d="M9 3h6l1 2h4v2H4V5h4zM5.5 8.5h13l-1 11.5a1.5 1.5 0 0 1-1.5 1.4H8a1.5 1.5 0 0 1-1.5-1.4z"/>'};
+const ic=(n,s=22)=>`<svg class="ic${SOL[n]?' h':''}" viewBox="0 0 24 24" width="${s}" height="${s}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><g class="o">${I[n]}</g>${SOL[n]?`<g class="s" fill="currentColor" fill-rule="evenodd" stroke="none">${SOL[n]}</g>`:''}</svg>`;
 const av=n=>`<span class="av" style="background:hsl(${[...String(n)].reduce((a,c)=>a+c.charCodeAt(0),0)*37%360} 55% 42%)">${esc(String(n)[0]||'?')}</span>`;
 let TH=document.documentElement.dataset.theme||'light';const LEGACY=['#356ae6','#2563eb','#0f8b8d'];
 function applyAccent(){const r=document.documentElement,i=S&&S.me?cur():null,c=i&&i.cfg&&String(i.cfg.color||'').toLowerCase();
