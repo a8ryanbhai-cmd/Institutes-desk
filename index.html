@@ -136,6 +136,11 @@ body:has(.auth){padding-bottom:0;background:#000618}
 .a-wa:focus-visible,.auth .a-go:focus-visible{outline:2px solid #fff;outline-offset:3px}
 .a-copy{margin:2px 0 0;font-size:12px;color:#8ea3cc}
 .a-dev,.a-wa{align-self:flex-end}.a-dev{text-align:right}
+.a-hint{position:fixed;left:50%;bottom:calc(18px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);z-index:30;display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;font:600 13px Inter,system-ui,sans-serif;color:#eaf2ff;background:#04123af2;border:1px solid #2a63c6;box-shadow:0 10px 30px -10px #0264f9cc;pointer-events:none;white-space:nowrap;animation:ahin .35s ease both}
+.a-hint svg{animation:ahb 1.2s ease-in-out infinite}
+@keyframes ahin{from{opacity:0;transform:translate(-50%,10px)}to{opacity:1;transform:translate(-50%,0)}}
+@keyframes ahb{0%,100%{transform:translateY(-2px)}50%{transform:translateY(3px)}}
+@media(prefers-reduced-motion:reduce){.a-hint,.a-hint svg{animation:none}}
 @media(max-width:480px){.a-badge{display:none}.a-card{padding:24px 18px 20px}}
 @media(min-width:700px) and (max-width:1199px){.a-feat{grid-template-columns:repeat(2,minmax(0,1fr))}.a-feat .a-eyebrow{grid-column:1/-1}}
 @media(min-width:1200px){.auth{--hdr:132px}.a-top{height:var(--hdr);align-items:flex-start;padding-top:30px}.a-main{display:grid;grid-template-columns:minmax(0,1fr) 420px minmax(0,1fr);gap:clamp(32px,4.5vw,72px);align-items:center;max-width:1600px;padding:0 clamp(24px,4vw,64px)}.a-login{order:0;min-height:0;margin-top:0;padding:0}.a-intro h1{font-size:clamp(30px,2.7vw,42px)}.a-foot{height:var(--hdr);padding:0 clamp(24px,4vw,64px);gap:10px}.auth.solo .a-main{grid-template-columns:minmax(0,420px);justify-content:center}}
@@ -307,7 +312,16 @@ const er=m=>{$('#aerr').innerHTML=m?`<div class="alert no" role="alert">${esc(m)
 $('#go').onclick=async()=>{er('');const u=$('#un').value.trim(),p=$('#pw').value;if(!u&&!ADMPAGE){er('Enter your username.');$('#un').focus();return}if(!p){er('Enter your password.');$('#pw').focus();return}
 const b=$('#go');b.disabled=true;b.innerHTML='<span class="spin"></span>Signing in';try{T=(await api(ADMPAGE?'admin/login':'login','POST',{username:$('#un').value,password:p})).token;sessionStorage.t=T;S.tab='dash';await boot()}catch(e){if(e)er(e.message);if($('#go')){b.disabled=false;b.textContent='Sign in'}}};
 // NOTE: these handlers must not return false, otherwise the keyboard Backspace key is cancelled
-$('#pw').onkeydown=e=>{if(e.key=='Enter')$('#go').click()};$('#un').onkeydown=e=>{if(e.key=='Enter')$('#pw').focus()}}
+$('#pw').onkeydown=e=>{if(e.key=='Enter')$('#go').click()};$('#un').onkeydown=e=>{if(e.key=='Enter')$('#pw').focus()};scrollHint()}
+/* small "Scroll down" pop-up on the login page; it vanishes the moment the visitor scrolls even a little */
+function scrollHint(){if(ADMPAGE)return;const root=document.querySelector('.auth');if(!root)return;let el=null,tm=0;
+const evs=['scroll','wheel','touchmove','keydown'];
+const off=()=>{clearTimeout(tm);evs.forEach(t=>window.removeEventListener(t,on));if(el){el.remove();el=null}};
+const on=e=>{if(e.type=='keydown'&&!['ArrowDown','PageDown','End',' '].includes(e.key))return;off()};
+tm=setTimeout(()=>{if(!root.isConnected||window.scrollY>2||document.documentElement.scrollHeight-window.innerHeight<60)return;
+el=document.createElement('div');el.className='a-hint';el.setAttribute('role','status');
+el.innerHTML='<span>Scroll down</span><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+root.appendChild(el);evs.forEach(t=>window.addEventListener(t,on,{passive:true}))},900)}
 async function boot(){S.me=await api('me');if(ADMPAGE&&S.me.role!='super'){out('This page is for the administrator only.');return}S.insts=await api('inst');
 if(S.me.role=='super'){if(!S.mode){S.mode='admin';S.tab='adm'}if(S.inst&&!cur()){S.inst=null;S.mode='admin';S.tab='adm'}}
 else{S.inst=S.me.inst;S.mode='inst';if(['adm','admact'].includes(S.tab))S.tab='dash';if(S.me.role=='staff'){S.sec=S.me.sec;if(['team','log','actv','set','more'].includes(S.tab))S.tab='dash'}}
@@ -505,8 +519,7 @@ ${kpis([['Students',s.students,staff?'In your '+lc:s.sections+' '+S.L[1].toLower
 <div class="cols2"><div class="card"><h2>Absences per day</h2><p class="mut" style="margin:0">Last ${trd.length||14} days with attendance</p>${ok?chart.bar(trd.map(d=>d.absent),lab):empty('No data yet','')}</div>
 <div class="card"><h2>Fee collection</h2><div class="dwrap">${donut([[s.paid,'ok'],[s.pending,'warn']],pct+'%','cleared')}<div class="leg"><div><i class="dot ok"></i>Cleared<b>${s.paid}</b></div><div><i class="dot warn"></i>Pending<b>${s.pending}</b></div><button class="btn sm" data-g="fee" style="margin-top:6px">${staff?'Approve fees':'Review fees'}</button></div></div></div></div>
 <div class="${staff?'':'cols2 w'}"><div class="card" ${staff?'':'style="margin:0"'}><h2>${staff?'My class today':S.L[1]+' today'}</h2>${s.classes.length?`<table style="min-width:0"><tr><th>${S.L[0]}</th><th>Teacher</th><th>Attendance</th></tr>${s.classes.map(c=>`<tr><td><b>${esc(c.label)}</b><div class="mut" style="font-size:12px">${c.n} students</div></td><td>${esc(c.teacher||'-')}</td><td>${c.marked?`<span class="tag ok">Taken</span> <span class="mut" style="font-size:12px">${c.absent} absent</span>`:'<span class="tag warn">Pending</span>'}</td></tr>`).join('')}</table>`:empty('No '+S.L[1].toLowerCase()+' yet',staff?'':'Create one under Students.')}</div>
-${staff?'':`<div class="card"><div class="row"><h2 class="sp">Announcements</h2><button class="btn sm" data-g="ann">Send notice</button></div>${notices.length?notices.map(a=>`<div style="padding:10px 0;border-top:1px solid var(--line)"><b>Notice sent to ${esc(a.detail||'parents')}</b><div class="mut small">${esc(a.uname)} &middot; ${new Date(a.ts).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})}</div></div>`).join(''):empty('No notices sent yet','Notices you send to parents appear here.')}</div>`}</div>
-${staff?'':`<div class="card" style="margin-top:16px"><div class="row"><h2 class="sp">Recent activity</h2><button class="btn sm" data-g="actv">View all</button></div>${acts.length?`<table style="margin-top:6px;min-width:0">${acts.slice(0,6).map(a=>`<tr><td>${esc(a.uname)}</td><td>${esc(a.action)}</td><td class="mut" style="white-space:nowrap">${new Date(a.ts).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})}</td></tr>`).join('')}</table>`:empty('Nothing yet','')}</div>`}`;
+${staff?'':`<div class="card"><div class="row"><h2 class="sp">Announcements</h2><button class="btn sm" data-g="ann">Send notice</button></div>${notices.length?notices.map(a=>`<div style="padding:10px 0;border-top:1px solid var(--line)"><b>Notice sent to ${esc(a.detail||'parents')}</b><div class="mut small">${esc(a.uname)} &middot; ${new Date(a.ts).toLocaleString('en-IN',{day:'numeric',month:'short',hour:'numeric',minute:'2-digit'})}</div></div>`).join(''):empty('No notices sent yet','Notices you send to parents appear here.')}</div>`}</div>`;
 document.querySelectorAll('#main [data-g]').forEach(e=>e.onclick=()=>{S.tab=e.dataset.g;frame()})},
 async att(){const h=await secBar();need('#main').innerHTML=h+`<div class="card" id="box"></div>`;bindSec(V.att);if(!S.sec)return;
 const rows=await api(`att?sec=${S.sec}&day=${S.day}`),ab=new Set(rows.filter(r=>r.status=='A').map(r=>r.id));
