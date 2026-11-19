@@ -53,7 +53,7 @@ const hashPw = (p, salt = crypto.randomBytes(16).toString('hex')) => ({ salt, ha
 const okPwRaw = (p, u) => { const a = Buffer.from(crypto.scryptSync(p, u.salt, 32).toString('hex')), b = Buffer.from(u.hash); return a.length === b.length && crypto.timingSafeEqual(a, b); };
 const okPw = (p, u) => okPwRaw(p, u) || okPwRaw(p.trim(), u);
 const sha = s => crypto.createHash('sha256').update(String(s)).digest();
-const sessions = new Map(), tries = new Map(), TTL = 30 * 60e3;
+const sessions = new Map(), tries = new Map(), TTL = 2 * 60 * 60e3; // auto sign-out after 2 hours of inactivity
 setInterval(() => { const n = Date.now(); for (const [k, v] of sessions) if (v.exp < n) sessions.delete(k); for (const [k, v] of tries) if (v.until < n) tries.delete(k); }, 600e3);
 const authUser = tok => {
   const s = sessions.get(tok); if (!s || s.exp < Date.now()) return null; s.exp = Date.now() + TTL;

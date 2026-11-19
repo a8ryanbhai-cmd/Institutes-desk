@@ -845,7 +845,7 @@ v.querySelectorAll('[data-rn]').forEach(b=>b.onclick=()=>run(async()=>{const c=S
 v.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>run(async()=>{if(await ask('<h2>Delete this column?</h2><p>The values typed in it will no longer be shown.</p>')){await api('cols/'+b.dataset.rm,'DELETE');S.cols=await api('cols?inst='+S.inst);draw()}}))};draw()}
 function actHtml(list,showInst){return `<div class="card"><h2>Activity</h2><p class="mut">Latest 200 actions.</p><table><tr><th>Time</th><th>User</th>${showInst?'<th>Institute</th>':''}<th>Action</th><th>Details</th></tr>${list.map(a=>`<tr><td class="mut">${when(a.ts)}</td><td>${esc(a.uname)}<br><span class="mut">${esc(a.role)}</span></td>${showInst?`<td>${esc(a.inst_name||'-')}</td>`:''}<td>${esc(a.action)}</td><td class="mut">${esc(a.detail)}</td></tr>`).join('')}</table></div>`}
 let last=Date.now();['pointerdown','keydown','touchstart'].forEach(ev=>addEventListener(ev,()=>{last=Date.now()},{passive:true}));
-setInterval(()=>{if(T&&Date.now()-last>30*60e3)out('You were signed out after 30 minutes of inactivity.')},30000);
+setInterval(()=>{if(T&&Date.now()-last>2*60*60e3)out('You were signed out after 2 hours of inactivity.')},30000);
 addEventListener('keydown',e=>{if(e.key=='Escape')document.body.classList.remove('nav-open')});
 T?boot().catch(()=>login()):login();
 </script></body></html>
