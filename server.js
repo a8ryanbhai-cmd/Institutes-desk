@@ -351,6 +351,12 @@ const routes = [
     R('insert or replace into fee(stu,month,status,cleared) values(?,?,?,?)', s.id, b.month, 'cleared', today());
     if (once(`paid:${s.id}:${b.month}`)) { mark(`paid:${s.id}:${b.month}`); queue(() => wa(i, s.phone, 'fee-paid', cfgOf(i).tpl.paid, [s.name, b.month, i.name])); }
     act(u, 'approved fees', `${s.name} ${b.month}`, s.inst); return { ok: 1 }; }],
+  // mark a month's fee as "due" (not paid yet, but acknowledged) or undo it. Same access as approving: head/admin, or the class teacher for their own class.
+  ['POST', /^\/api\/fee\/due$/, (_, b, __, u) => { if (!isMonth(b.month)) throw E('Invalid month'); const s = stuFor(u, b.stu), cur = G('select status from fee where stu=? and month=?', s.id, b.month);
+    if (b.due === false) { R(`delete from fee where stu=? and month=? and status='due'`, s.id, b.month); act(u, 'removed fee due', `${s.name} ${b.month}`, s.inst); return { ok: 1 }; }
+    if (cur && cur.status === 'cleared') throw E('This fee is already cleared');
+    R('insert or replace into fee(stu,month,status,cleared) values(?,?,?,?)', s.id, b.month, 'due', null);
+    act(u, 'marked fee due', `${s.name} ${b.month}`, s.inst); return { ok: 1 }; }],
   ['POST', /^\/api\/fee\/remind$/, async (_, b, __, u) => { needAdm(u); if (!isMonth(b.month)) throw E('Invalid month'); const i = instFor(u, b.inst); const n = await dueReminders(i, b.month, true); act(u, 'sent fee reminders', `${n} parents`, i.id); return { sent: n }; }],
 
   // notices: head/admin -> everyone or one class; teacher -> own class only
